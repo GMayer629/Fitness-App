@@ -1,65 +1,84 @@
-import React, { useState, useEffect } from 'react';
-import { useApp } from '../AppContext';
-import { getMondayOfWeek } from '../utils';
-import { api } from '../api';
+import React, { useState, useEffect, useCallback } from 'react'
+import { useApp } from '../context/AppContext'
 
-const card = { background: '#1E2328', borderRadius: 12, padding: '14px 16px', marginBottom: 12, border: '1px solid #2A2F38' };
-const input = { background: '#252A31', border: '1px solid #3A4048', borderRadius: 8, color: '#fff', padding: '8px 12px', fontSize: 14, fontFamily: 'Archivo', width: '100%' };
-
-const ACTIVITIES = ['Golf', 'Basketball', 'Paddle Tennis', 'Cardio', 'Other'];
+const ACTIVITIES = ['Golf', 'Basketball', 'Paddle Tennis', 'Cardio', 'Other']
 
 export default function Sport() {
-  const { activeDate } = useApp();
-  const weekStart = getMondayOfWeek(activeDate);
+  const { activeDate } = useApp()
+  const [activity, setActivity] = useState('Golf')
+  const [minutes, setMinutes] = useState('')
+  const [holesWalked, setHolesWalked] = useState('')
+  const [holesCart, setHolesCart] = useState('')
+  const [sessions, setSessions] = useState([])
+  const [summary, setSummary] = useState({ sessions: 0, totalMinutes: 0, holesWalked: 0, holesCart: 0 })
 
-  const [sessions, setSessions] = useState([]);
-  const [summary, setSummary] = useState({ sessions: 0, totalMinutes: 0, holesWalked: 0, holesCart: 0 });
-  const [activity, setActivity] = useState('Golf');
-  const [minutes, setMinutes] = useState('');
-  const [holesWalked, setHolesWalked] = useState('');
-  const [holesCart, setHolesCart] = useState('');
+  const fetchSessions = useCallback(async () => {
+    const res = await fetch(`/api/sport?date=${activeDate}`)
+    setSessions(await res.json())
+  }, [activeDate])
 
-  const load = () => {
-    api.getSport().then(setSessions).catch(() => {});
-    api.getSportWeeklySummary(weekStart).then(setSummary).catch(() => {});
-  };
+  const fetchSummary = async () => {
+    const res = await fetch('/api/sport/weekly-summary')
+    setSummary(await res.json())
+  }
 
-  useEffect(() => { load(); }, [activeDate]);
+  useEffect(() => {
+    fetchSessions()
+    fetchSummary()
+  }, [fetchSessions])
 
   const handleLog = async () => {
-    if (!minutes) return;
-    await api.addSport({
-      activity, minutes: parseInt(minutes),
-      holes_walked: parseInt(holesWalked) || 0,
-      holes_cart: parseInt(holesCart) || 0,
-      date: activeDate
-    });
-    setMinutes('');
-    setHolesWalked('');
-    setHolesCart('');
-    load();
-  };
+    if (!minutes) return
+    await fetch('/api/sport', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        activity, minutes: parseInt(minutes),
+        holes_walked: parseInt(holesWalked) || 0,
+        holes_cart: parseInt(holesCart) || 0,
+        date: activeDate,
+      }),
+    })
+    setMinutes('')
+    setHolesWalked('')
+    setHolesCart('')
+    fetchSessions()
+    fetchSummary()
+  }
 
   const handleDelete = async (id) => {
-    await api.deleteSport(id);
-    load();
-  };
+    await fetch(`/api/sport/${id}`, { method: 'DELETE' })
+    fetchSessions()
+    fetchSummary()
+  }
+
+  const cardStyle = { background: '#1E2328', borderRadius: 12, padding: 16, marginBottom: 16 }
+  const sectionTitle = {
+    fontFamily: 'Barlow Condensed', fontSize: 13, fontWeight: 700,
+    color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12,
+  }
+  const inputStyle = {
+    background: '#14171C', border: '1px solid #3D4149', color: 'white',
+    borderRadius: 8, padding: '10px 12px', fontSize: 15,
+    fontFamily: 'Archivo, sans-serif', width: '100%',
+  }
 
   return (
-    <div style={{ padding: '16px 12px' }}>
+    <div>
       {/* Activity selector */}
-      <div style={card}>
-        <div style={{ fontFamily: 'Barlow Condensed', fontSize: 14, color: '#9CA3AF', letterSpacing: 1, marginBottom: 10 }}>ACTIVITY</div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+      <div style={cardStyle}>
+        <div style={sectionTitle}>Activity</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
           {ACTIVITIES.map(a => (
             <button
               key={a}
               onClick={() => setActivity(a)}
               style={{
-                background: activity === a ? '#FF6B35' : '#252A31',
-                border: `1px solid ${activity === a ? '#FF6B35' : '#3A4048'}`,
-                color: '#fff', borderRadius: 20, padding: '6px 14px',
-                fontFamily: 'Archivo', fontSize: 13, cursor: 'pointer'
+                background: activity === a ? 'transparent' : '#3D4149',
+                color: activity === a ? '#FF6B35' : 'white',
+                border: activity === a ? '2px solid #FF6B35' : '2px solid transparent',
+                borderRadius: 8, padding: '8px 14px', fontSize: 14,
+                fontWeight: 600, cursor: 'pointer',
               }}
             >
               {a}
@@ -67,68 +86,84 @@ export default function Sport() {
           ))}
         </div>
 
-        {/* Golf-specific fields */}
         {activity === 'Golf' && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
             <div>
-              <div style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 4 }}>Holes Walked</div>
-              <input type="number" style={input} placeholder="0" value={holesWalked} onChange={e => setHolesWalked(e.target.value)} />
+              <label style={{ fontSize: 12, color: '#9CA3AF', display: 'block', marginBottom: 4 }}>Holes Walked</label>
+              <input type="number" value={holesWalked} onChange={e => setHolesWalked(e.target.value)} style={inputStyle} placeholder="0" />
             </div>
             <div>
-              <div style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 4 }}>Holes (Cart)</div>
-              <input type="number" style={input} placeholder="0" value={holesCart} onChange={e => setHolesCart(e.target.value)} />
+              <label style={{ fontSize: 12, color: '#9CA3AF', display: 'block', marginBottom: 4 }}>Holes (Cart)</label>
+              <input type="number" value={holesCart} onChange={e => setHolesCart(e.target.value)} style={inputStyle} placeholder="0" />
             </div>
           </div>
         )}
 
-        <div style={{ marginBottom: 10 }}>
-          <div style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 4 }}>Minutes</div>
-          <input type="number" style={input} placeholder="60" value={minutes} onChange={e => setMinutes(e.target.value)} />
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 12, color: '#9CA3AF', display: 'block', marginBottom: 4 }}>Minutes</label>
+          <input type="number" value={minutes} onChange={e => setMinutes(e.target.value)} style={inputStyle} placeholder="60" />
         </div>
+
         <button
           onClick={handleLog}
-          style={{ width: '100%', background: '#FF6B35', border: 'none', color: '#fff', borderRadius: 8, padding: '11px', fontFamily: 'Barlow Condensed', fontSize: 16, cursor: 'pointer', fontWeight: 600 }}
+          style={{
+            width: '100%', background: '#FF6B35', color: 'white', border: 'none',
+            borderRadius: 10, padding: '12px', fontSize: 16, fontWeight: 700,
+            cursor: 'pointer', fontFamily: 'Barlow Condensed',
+          }}
         >
           Log Session
         </button>
       </div>
 
       {/* Weekly summary */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginBottom: 12 }}>
-        {[
-          { label: 'Sessions', value: `${summary.sessions}/4`, ok: summary.sessions >= 4 },
-          { label: 'Minutes', value: summary.totalMinutes, ok: false },
-          { label: 'Holes Walked', value: summary.holesWalked, ok: false },
-          { label: 'Holes (Cart)', value: summary.holesCart, ok: false },
-        ].map(tile => (
-          <div key={tile.label} style={{ background: '#1E2328', borderRadius: 12, padding: '12px 14px', border: '1px solid #2A2F38' }}>
-            <div style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 4 }}>{tile.label.toUpperCase()}</div>
-            <div style={{ fontFamily: 'Barlow Condensed', fontSize: 28, fontWeight: 700, color: tile.ok ? '#5FBF7E' : '#fff' }}>{tile.value}</div>
-          </div>
-        ))}
+      <div style={cardStyle}>
+        <div style={sectionTitle}>This Week</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          {[
+            { label: 'Sessions', value: `${summary.sessions}/4`, color: summary.sessions >= 4 ? '#5FBF7E' : '#FF6B35' },
+            { label: 'Total Minutes', value: summary.totalMinutes, color: 'white' },
+            { label: 'Holes Walked', value: summary.holesWalked, color: 'white' },
+            { label: 'Holes (Cart)', value: summary.holesCart, color: 'white' },
+          ].map(tile => (
+            <div key={tile.label} style={{ background: '#14171C', borderRadius: 10, padding: '12px 14px' }}>
+              <div style={{ fontSize: 12, color: '#9CA3AF', marginBottom: 4 }}>{tile.label}</div>
+              <div style={{ fontFamily: 'Barlow Condensed', fontSize: 28, fontWeight: 700, color: tile.color }}>
+                {tile.value}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Recent sessions */}
-      <div style={card}>
-        <div style={{ fontFamily: 'Barlow Condensed', fontSize: 14, color: '#9CA3AF', letterSpacing: 1, marginBottom: 8 }}>RECENT SESSIONS</div>
+      <div style={cardStyle}>
+        <div style={sectionTitle}>Today's Sessions</div>
         {sessions.length === 0 ? (
-          <div style={{ color: '#6B7280', fontSize: 13 }}>No sessions logged</div>
+          <p style={{ color: '#9CA3AF', fontSize: 13 }}>No sessions logged today</p>
         ) : (
-          sessions.slice(0, 10).map(s => (
-            <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #2A2F38' }}>
+          sessions.map(session => (
+            <div key={session.id} style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '10px 0', borderBottom: '1px solid #2D3139',
+            }}>
               <div>
-                <div style={{ fontFamily: 'Barlow Condensed', fontSize: 16 }}>{s.activity}</div>
+                <div style={{ fontWeight: 500 }}>{session.activity}</div>
                 <div style={{ fontSize: 12, color: '#9CA3AF' }}>
-                  {s.date} · {s.minutes} min
-                  {s.activity === 'Golf' && s.holes_walked > 0 ? ` · ${s.holes_walked}w` : ''}
-                  {s.activity === 'Golf' && s.holes_cart > 0 ? ` · ${s.holes_cart}c` : ''}
+                  {session.minutes} min
+                  {session.activity === 'Golf' && (session.holes_walked > 0 || session.holes_cart > 0) && (
+                    <> · {session.holes_walked > 0 ? `${session.holes_walked} walked` : ''}{session.holes_walked > 0 && session.holes_cart > 0 ? ', ' : ''}{session.holes_cart > 0 ? `${session.holes_cart} cart` : ''}</>
+                  )}
                 </div>
               </div>
-              <button onClick={() => handleDelete(s.id)} style={{ background: 'none', border: 'none', color: '#6B7280', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
+              <button
+                onClick={() => handleDelete(session.id)}
+                style={{ background: 'none', color: '#EF4444', border: 'none', cursor: 'pointer', fontSize: 18 }}
+              >×</button>
             </div>
           ))
         )}
       </div>
     </div>
-  );
+  )
 }

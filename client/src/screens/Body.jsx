@@ -1,255 +1,231 @@
-import React, { useState, useEffect } from 'react';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Legend } from 'recharts';
-import { useApp } from '../AppContext';
-import { api } from '../api';
-
-const card = { background: '#1E2328', borderRadius: 12, padding: '14px 16px', marginBottom: 12, border: '1px solid #2A2F38' };
-const input = { background: '#252A31', border: '1px solid #3A4048', borderRadius: 8, color: '#fff', padding: '8px 12px', fontSize: 14, fontFamily: 'Archivo', width: '100%' };
-const labelStyle = { fontSize: 11, color: '#9CA3AF', marginBottom: 4 };
-
-function BarbellMeter({ current, start, goal }) {
-  const pct = Math.max(0, Math.min(100, ((start - current) / (start - goal)) * 100));
-  const lbsLost = start - current;
-  const lbsToGo = current - goal;
-  return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#9CA3AF', marginBottom: 6 }}>
-        <span>Start: {start} lbs</span>
-        <span>Goal: {goal} lbs</span>
-      </div>
-      <div style={{ position: 'relative', height: 24, background: '#2A2F38', borderRadius: 12, overflow: 'hidden' }}>
-        <div style={{ height: '100%', background: 'linear-gradient(90deg, #5FBF7E, #FF6B35)', width: `${pct}%`, borderRadius: 12, transition: 'width 0.5s' }} />
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Barlow Condensed', fontSize: 14 }}>
-          {pct.toFixed(1)}% — {lbsLost.toFixed(1)} lbs lost · {lbsToGo.toFixed(1)} to go
-        </div>
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#9CA3AF', marginTop: 4 }}>
-        <span>Current: {current} lbs</span>
-      </div>
-    </div>
-  );
-}
-
-function computePace(weighIns) {
-  if (weighIns.length < 2) return null;
-  const sorted = [...weighIns].sort((a, b) => a.date.localeCompare(b.date));
-  const recent = sorted.filter(w => {
-    const d = new Date(w.date);
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 21);
-    return d >= cutoff;
-  });
-  if (recent.length < 2) return null;
-  const first = recent[0];
-  const last = recent[recent.length - 1];
-  const days = (new Date(last.date) - new Date(first.date)) / 86400000;
-  if (days === 0) return null;
-  const lbsPerDay = (last.weight - first.weight) / days;
-  const lbsPerWeek = lbsPerDay * 7;
-  return lbsPerWeek;
-}
-
-function computeGoalDate(currentWeight, goalWeight, lbsPerWeek) {
-  if (!lbsPerWeek || lbsPerWeek >= 0) return null;
-  const weeksNeeded = (currentWeight - goalWeight) / Math.abs(lbsPerWeek);
-  const d = new Date();
-  d.setDate(d.getDate() + Math.round(weeksNeeded * 7));
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-}
+import React, { useState, useEffect, useCallback } from 'react'
+import { useApp } from '../context/AppContext'
+import {
+  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Legend
+} from 'recharts'
 
 export default function Body() {
-  const { activeDate, settings, refreshSettings } = useApp();
-  const [weighIns, setWeighIns] = useState([]);
-  const [form, setForm] = useState({ weight: '', waist: '' });
-  const [settingsForm, setSettingsForm] = useState(settings);
-  const [savingSettings, setSavingSettings] = useState(false);
+  const { activeDate, settings, refreshSettings } = useApp()
+  const [weighIns, setWeighIns] = useState([])
+  const [weight, setWeight] = useState('')
+  const [waist, setWaist] = useState('')
+  const [localSettings, setLocalSettings] = useState(null)
+  const [saveMsg, setSaveMsg] = useState('')
 
   useEffect(() => {
-    setSettingsForm(settings);
-  }, [settings]);
+    if (settings) setLocalSettings({ ...settings })
+  }, [settings])
 
-  const load = () => {
-    api.getWeighIns(200).then(d => setWeighIns([...d].reverse())).catch(() => {});
-  };
+  const fetchWeighIns = useCallback(async () => {
+    const res = await fetch('/api/weigh-ins')
+    setWeighIns(await res.json())
+  }, [])
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { fetchWeighIns() }, [fetchWeighIns])
 
-  const handleLog = async () => {
-    if (!form.weight) return;
-    await api.addWeighIn({ date: activeDate, weight: parseFloat(form.weight), waist: parseFloat(form.waist) || null });
-    setForm({ weight: '', waist: '' });
-    load();
-  };
-
-  const handleSaveSettings = async () => {
-    setSavingSettings(true);
-    await api.updateSettings({
-      weekday_target: parseInt(settingsForm.weekday_target),
-      friday_target: parseInt(settingsForm.friday_target),
-      weekend_target: parseInt(settingsForm.weekend_target),
-      protein_target: parseInt(settingsForm.protein_target),
-      start_weight: parseFloat(settingsForm.start_weight),
-      goal_weight: parseFloat(settingsForm.goal_weight),
-      goal_waist: parseFloat(settingsForm.goal_waist),
-      goal_date: settingsForm.goal_date,
-    });
-    await refreshSettings();
-    setSavingSettings(false);
-  };
-
-  const lbsPerWeek = computePace(weighIns);
-  const latestWeight = weighIns.length ? weighIns[weighIns.length - 1].weight : settings.start_weight;
-  const estimatedGoalDate = lbsPerWeek ? computeGoalDate(latestWeight, settings.goal_weight, lbsPerWeek) : null;
-
-  // Build chart data: actual weigh-ins + goal line
-  const chartData = weighIns.map(w => ({ date: w.date, weight: w.weight }));
-
-  // Add goal point
-  const goalPoint = { date: settings.goal_date, goal: settings.goal_weight };
-
-  // Build combined data for chart
-  const allDates = new Set([...chartData.map(d => d.date), settings.goal_date]);
-  const combinedData = [...allDates].sort().map(date => {
-    const actual = chartData.find(d => d.date === date);
-    return { date, weight: actual?.weight, goal: date === settings.goal_date ? settings.goal_weight : undefined };
-  });
-
-  // Add start point for goal line
-  if (chartData.length > 0) {
-    const firstDate = chartData[0].date;
-    combinedData.unshift({ date: firstDate, goal: settings.start_weight });
+  const handleLogWeighIn = async () => {
+    if (!weight) return
+    await fetch('/api/weigh-ins', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: activeDate, weight: parseFloat(weight), waist: waist ? parseFloat(waist) : null }),
+    })
+    setWeight('')
+    setWaist('')
+    fetchWeighIns()
   }
 
-  const waistData = weighIns.filter(w => w.waist).map(w => ({ date: w.date, waist: w.waist }));
+  const handleSaveSettings = async () => {
+    await fetch('/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(localSettings),
+    })
+    refreshSettings()
+    setSaveMsg('Saved!')
+    setTimeout(() => setSaveMsg(''), 2000)
+  }
+
+  // Compute pace
+  const computePace = () => {
+    if (weighIns.length < 2) return null
+    const now = new Date()
+    const cutoff = new Date(now.getTime() - 21 * 24 * 60 * 60 * 1000)
+    const recent = weighIns.filter(w => new Date(w.date) >= cutoff)
+    if (recent.length < 2) return null
+    const first = recent[0]
+    const last = recent[recent.length - 1]
+    const days = (new Date(last.date) - new Date(first.date)) / (1000 * 60 * 60 * 24)
+    if (days === 0) return null
+    const lbsPerWeek = ((last.weight - first.weight) / days) * 7
+    return { lbsPerWeek: lbsPerWeek.toFixed(2), currentWeight: last.weight }
+  }
+
+  const computeGoalDate = (pace, currentWeight) => {
+    if (!pace || parseFloat(pace) >= 0) return null
+    const lbsPerDay = parseFloat(pace) / 7
+    const daysToGoal = (currentWeight - settings.goal_weight) / Math.abs(lbsPerDay)
+    const goalDate = new Date()
+    goalDate.setDate(goalDate.getDate() + Math.round(daysToGoal))
+    return goalDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+  }
+
+  const paceData = computePace()
+
+  // Progress bar calculation
+  const latestWeight = weighIns.length > 0 ? weighIns[weighIns.length - 1].weight : settings.start_weight
+  const progressPct = Math.max(0, Math.min(100,
+    ((settings.start_weight - latestWeight) / (settings.start_weight - settings.goal_weight)) * 100
+  ))
+
+  const weightChartData = weighIns.map(w => ({ date: w.date.slice(5), actual: w.weight }))
+  const waistData = weighIns.filter(w => w.waist).map(w => ({ date: w.date.slice(5), waist: w.waist }))
+
+  const cardStyle = { background: '#1E2328', borderRadius: 12, padding: 16, marginBottom: 16 }
+  const sectionTitle = {
+    fontFamily: 'Barlow Condensed', fontSize: 13, fontWeight: 700,
+    color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12,
+  }
+  const inputStyle = {
+    background: '#14171C', border: '1px solid #3D4149', color: 'white',
+    borderRadius: 8, padding: '10px 12px', fontSize: 15,
+    fontFamily: 'Archivo, sans-serif', width: '100%',
+  }
 
   return (
-    <div style={{ padding: '16px 12px' }}>
-      {/* Weight chart */}
-      <div style={card}>
-        <div style={{ fontFamily: 'Barlow Condensed', fontSize: 14, color: '#9CA3AF', letterSpacing: 1, marginBottom: 8 }}>WEIGHT TREND</div>
-        {lbsPerWeek && (
-          <div style={{ fontSize: 13, color: '#9CA3AF', marginBottom: 8 }}>
-            {lbsPerWeek < 0 ? (
-              <span>Losing <span style={{ color: '#5FBF7E' }}>{Math.abs(lbsPerWeek).toFixed(2)} lbs/wk</span>{estimatedGoalDate ? ` · on pace for ${estimatedGoalDate}` : ''}</span>
-            ) : (
-              <span style={{ color: '#FF6B35' }}>+{lbsPerWeek.toFixed(2)} lbs/wk (21-day avg)</span>
-            )}
-          </div>
-        )}
-        {combinedData.length > 1 ? (
+    <div>
+      {/* Weight trend */}
+      <div style={cardStyle}>
+        <div style={sectionTitle}>Weight Trend</div>
+        {weightChartData.length > 0 ? (
           <ResponsiveContainer width="100%" height={160}>
-            <LineChart data={combinedData}>
-              <XAxis dataKey="date" tick={{ fill: '#9CA3AF', fontSize: 10 }} tickFormatter={d => d.slice(5)} axisLine={false} tickLine={false} />
-              <YAxis domain={['auto', 'auto']} tick={{ fill: '#9CA3AF', fontSize: 10 }} axisLine={false} tickLine={false} width={40} />
-              <Tooltip contentStyle={{ background: '#1E2328', border: 'none', fontSize: 12 }} />
-              <Line type="monotone" dataKey="weight" stroke="#FF6B35" strokeWidth={2} dot={false} name="Weight" connectNulls={false} />
-              <Line type="monotone" dataKey="goal" stroke="#5FBF7E" strokeWidth={1} strokeDasharray="5 5" dot={false} name="Goal" connectNulls />
+            <LineChart data={weightChartData}>
+              <XAxis dataKey="date" stroke="#9CA3AF" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
+              <YAxis stroke="#9CA3AF" tick={{ fontSize: 11 }} width={40} domain={['auto', 'auto']} />
+              <Tooltip contentStyle={{ background: '#1E2328', border: 'none', borderRadius: 8 }} itemStyle={{ color: '#FF6B35' }} />
+              <ReferenceLine y={settings.goal_weight} stroke="#5FBF7E" strokeDasharray="6 3" label={{ value: `Goal ${settings.goal_weight}`, fill: '#5FBF7E', fontSize: 11 }} />
+              <Line type="monotone" dataKey="actual" stroke="#FF6B35" dot={false} strokeWidth={2} />
             </LineChart>
           </ResponsiveContainer>
         ) : (
-          <div style={{ color: '#6B7280', fontSize: 13, height: 100, display: 'flex', alignItems: 'center' }}>Log weigh-ins to see trend</div>
+          <p style={{ color: '#9CA3AF', fontSize: 13 }}>No weigh-ins yet</p>
         )}
       </div>
 
-      {/* Barbell goal meter */}
-      <div style={card}>
-        <div style={{ fontFamily: 'Barlow Condensed', fontSize: 14, color: '#9CA3AF', letterSpacing: 1, marginBottom: 10 }}>GOAL PROGRESS</div>
-        <BarbellMeter current={latestWeight} start={settings.start_weight} goal={settings.goal_weight} />
-        <div style={{ marginTop: 8, fontSize: 12, color: '#9CA3AF' }}>
-          Goal: {settings.goal_weight} lbs by {settings.goal_date}
-        </div>
-      </div>
-
-      {/* Waist chart */}
-      {waistData.length > 1 && (
-        <div style={card}>
-          <div style={{ fontFamily: 'Barlow Condensed', fontSize: 14, color: '#9CA3AF', letterSpacing: 1, marginBottom: 8 }}>WAIST TREND</div>
-          <ResponsiveContainer width="100%" height={100}>
-            <LineChart data={waistData}>
-              <XAxis dataKey="date" tick={{ fill: '#9CA3AF', fontSize: 10 }} tickFormatter={d => d.slice(5)} axisLine={false} tickLine={false} />
-              <YAxis domain={['auto', 'auto']} tick={{ fill: '#9CA3AF', fontSize: 10 }} width={36} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={{ background: '#1E2328', border: 'none', fontSize: 12 }} />
-              <Line type="monotone" dataKey="waist" stroke="#5FBF7E" strokeWidth={2} dot={false} name="Waist (in)" />
-              <ReferenceLine y={settings.goal_waist} stroke="#5FBF7E44" strokeDasharray="4 4" label={{ value: `goal ${settings.goal_waist}"`, fill: '#5FBF7E', fontSize: 10 }} />
-            </LineChart>
-          </ResponsiveContainer>
+      {/* Pace */}
+      {paceData && (
+        <div style={cardStyle}>
+          <div style={sectionTitle}>Pace</div>
+          <div style={{ fontFamily: 'Barlow Condensed', fontSize: 24, fontWeight: 700, color: parseFloat(paceData.lbsPerWeek) < 0 ? '#5FBF7E' : '#EF4444' }}>
+            {parseFloat(paceData.lbsPerWeek) > 0 ? '+' : ''}{paceData.lbsPerWeek} lbs/week
+          </div>
+          {computeGoalDate(paceData.lbsPerWeek, paceData.currentWeight) && (
+            <div style={{ color: '#9CA3AF', fontSize: 14, marginTop: 4 }}>
+              On pace to reach goal by {computeGoalDate(paceData.lbsPerWeek, paceData.currentWeight)}
+            </div>
+          )}
         </div>
       )}
 
+      {/* Waist trend */}
+      <div style={cardStyle}>
+        <div style={sectionTitle}>Waist Trend</div>
+        {waistData.length > 0 ? (
+          <ResponsiveContainer width="100%" height={120}>
+            <LineChart data={waistData}>
+              <XAxis dataKey="date" stroke="#9CA3AF" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
+              <YAxis stroke="#9CA3AF" tick={{ fontSize: 11 }} width={40} domain={['auto', 'auto']} />
+              <Tooltip contentStyle={{ background: '#1E2328', border: 'none', borderRadius: 8 }} itemStyle={{ color: '#5FBF7E' }} />
+              {settings.goal_waist && <ReferenceLine y={settings.goal_waist} stroke="#5FBF7E" strokeDasharray="6 3" />}
+              <Line type="monotone" dataKey="waist" stroke="#5FBF7E" dot={false} strokeWidth={2} />
+            </LineChart>
+          </ResponsiveContainer>
+        ) : (
+          <p style={{ color: '#9CA3AF', fontSize: 13 }}>No waist measurements yet</p>
+        )}
+      </div>
+
       {/* Log weigh-in */}
-      <div style={card}>
-        <div style={{ fontFamily: 'Barlow Condensed', fontSize: 14, color: '#9CA3AF', letterSpacing: 1, marginBottom: 10 }}>LOG WEIGH-IN</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+      <div style={cardStyle}>
+        <div style={sectionTitle}>Log Weigh-In</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
           <div>
-            <div style={labelStyle}>Weight (lbs)</div>
-            <input type="number" step="0.1" style={input} placeholder="170.5" value={form.weight} onChange={e => setForm(f => ({ ...f, weight: e.target.value }))} />
+            <label style={{ fontSize: 12, color: '#9CA3AF', display: 'block', marginBottom: 4 }}>Weight (lbs)</label>
+            <input type="number" step="0.1" value={weight} onChange={e => setWeight(e.target.value)} style={inputStyle} placeholder="170.5" />
           </div>
           <div>
-            <div style={labelStyle}>Waist (in)</div>
-            <input type="number" step="0.25" style={input} placeholder="32.5" value={form.waist} onChange={e => setForm(f => ({ ...f, waist: e.target.value }))} />
+            <label style={{ fontSize: 12, color: '#9CA3AF', display: 'block', marginBottom: 4 }}>Waist (in, optional)</label>
+            <input type="number" step="0.25" value={waist} onChange={e => setWaist(e.target.value)} style={inputStyle} placeholder="32.5" />
           </div>
         </div>
         <button
-          onClick={handleLog}
-          style={{ width: '100%', background: '#FF6B35', border: 'none', color: '#fff', borderRadius: 8, padding: '11px', fontFamily: 'Barlow Condensed', fontSize: 16, cursor: 'pointer', fontWeight: 600 }}
+          onClick={handleLogWeighIn}
+          style={{
+            width: '100%', background: '#FF6B35', color: 'white', border: 'none',
+            borderRadius: 10, padding: '12px', fontSize: 16, fontWeight: 700,
+            cursor: 'pointer', fontFamily: 'Barlow Condensed',
+          }}
         >
           Log Weigh-In
         </button>
       </div>
 
+      {/* Progress bar */}
+      <div style={cardStyle}>
+        <div style={sectionTitle}>Goal Progress</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 13, color: '#9CA3AF' }}>
+          <span>{settings.start_weight} lbs (start)</span>
+          <span>{settings.goal_weight} lbs (goal)</span>
+        </div>
+        <div style={{ background: '#3D4149', borderRadius: 6, height: 14 }}>
+          <div style={{
+            height: 14, borderRadius: 6, background: '#5FBF7E',
+            width: `${progressPct}%`, transition: 'width 0.3s',
+          }} />
+        </div>
+        <div style={{ textAlign: 'center', marginTop: 6, fontSize: 14, color: '#5FBF7E', fontFamily: 'Barlow Condensed', fontWeight: 700 }}>
+          {progressPct.toFixed(1)}% to goal
+        </div>
+      </div>
+
       {/* Settings */}
-      <div style={card}>
-        <div style={{ fontFamily: 'Barlow Condensed', fontSize: 14, color: '#9CA3AF', letterSpacing: 1, marginBottom: 10 }}>SETTINGS</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+      {localSettings && (
+        <div style={cardStyle}>
+          <div style={sectionTitle}>Settings</div>
           {[
-            { key: 'weekday_target', label: 'Weekday Cal' },
-            { key: 'friday_target', label: 'Friday Cal' },
-            { key: 'weekend_target', label: 'Weekend Cal' },
-            { key: 'protein_target', label: 'Protein Goal (g)' },
-            { key: 'start_weight', label: 'Start Weight' },
-            { key: 'goal_weight', label: 'Goal Weight' },
-            { key: 'goal_waist', label: 'Goal Waist (in)' },
-          ].map(({ key, label }) => (
-            <div key={key}>
-              <div style={labelStyle}>{label}</div>
+            { key: 'weekday_target', label: 'Weekday Cal Target', type: 'number' },
+            { key: 'friday_target', label: 'Friday Cal Target', type: 'number' },
+            { key: 'weekend_target', label: 'Weekend Cal Target', type: 'number' },
+            { key: 'protein_target', label: 'Protein Target (g)', type: 'number' },
+            { key: 'start_weight', label: 'Start Weight (lbs)', type: 'number' },
+            { key: 'goal_weight', label: 'Goal Weight (lbs)', type: 'number' },
+            { key: 'goal_waist', label: 'Goal Waist (in)', type: 'number' },
+            { key: 'goal_date', label: 'Goal Date', type: 'date' },
+          ].map(field => (
+            <div key={field.key} style={{ marginBottom: 10 }}>
+              <label style={{ fontSize: 12, color: '#9CA3AF', display: 'block', marginBottom: 4 }}>{field.label}</label>
               <input
-                type="number"
-                step={key.includes('waist') ? '0.25' : '1'}
-                style={input}
-                value={settingsForm[key] ?? ''}
-                onChange={e => setSettingsForm(f => ({ ...f, [key]: e.target.value }))}
+                type={field.type}
+                step={field.type === 'number' ? '0.5' : undefined}
+                value={localSettings[field.key] || ''}
+                onChange={e => setLocalSettings(s => ({ ...s, [field.key]: field.type === 'number' ? parseFloat(e.target.value) : e.target.value }))}
+                style={inputStyle}
               />
             </div>
           ))}
-          <div>
-            <div style={labelStyle}>Goal Date</div>
-            <input
-              type="date"
-              style={input}
-              value={settingsForm.goal_date ?? ''}
-              onChange={e => setSettingsForm(f => ({ ...f, goal_date: e.target.value }))}
-            />
-          </div>
+          {saveMsg && <p style={{ color: '#5FBF7E', fontSize: 14, marginBottom: 8 }}>{saveMsg}</p>}
+          <button
+            onClick={handleSaveSettings}
+            style={{
+              width: '100%', background: '#FF6B35', color: 'white', border: 'none',
+              borderRadius: 10, padding: '12px', fontSize: 16, fontWeight: 700,
+              cursor: 'pointer', fontFamily: 'Barlow Condensed',
+            }}
+          >
+            Save Settings
+          </button>
         </div>
-        <button
-          onClick={handleSaveSettings}
-          disabled={savingSettings}
-          style={{ width: '100%', background: '#5FBF7E', border: 'none', color: '#fff', borderRadius: 8, padding: '11px', fontFamily: 'Barlow Condensed', fontSize: 16, cursor: 'pointer', fontWeight: 600, opacity: savingSettings ? 0.7 : 1 }}
-        >
-          {savingSettings ? 'Saving…' : 'Save Settings'}
-        </button>
-      </div>
-
-      {/* Weigh-in history */}
-      <div style={card}>
-        <div style={{ fontFamily: 'Barlow Condensed', fontSize: 14, color: '#9CA3AF', letterSpacing: 1, marginBottom: 8 }}>HISTORY</div>
-        {[...weighIns].reverse().slice(0, 20).map(w => (
-          <div key={w.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #2A2F38', fontSize: 14 }}>
-            <span style={{ color: '#9CA3AF' }}>{w.date}</span>
-            <span style={{ fontFamily: 'Barlow Condensed', fontSize: 16 }}>{w.weight} lbs{w.waist ? ` · ${w.waist}"` : ''}</span>
-          </div>
-        ))}
-      </div>
+      )}
     </div>
-  );
+  )
 }

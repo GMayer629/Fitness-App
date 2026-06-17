@@ -1,154 +1,204 @@
-import React, { useState, useEffect } from 'react';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { useApp } from '../AppContext';
-import { api } from '../api';
+import React, { useState, useEffect, useCallback } from 'react'
+import { useApp } from '../context/AppContext'
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 
 const TEMPLATES = [
-  { name: 'Upper', exercises: ['Bench Press', 'Overhead Press', 'Barbell Row', 'Pull-ups'] },
-  { name: 'Legs', exercises: ['Squat', 'Romanian Deadlift', 'Deadlift', 'Leg Press'] },
-  { name: 'Arms (Current)', exercises: ['Bicep Curl', 'Tricep Pushdown', 'Hammer Curl', 'Skull Crushers'] },
-  { name: 'Arms+Athletic ★', exercises: ['Bicep Curl', 'Tricep Pushdown', 'Lateral Raise', 'Face Pull'] },
-  { name: 'Home DB', exercises: ['DB Press', 'DB Row', 'DB Shoulder Press', 'DB Curl'] },
-];
-
-const card = { background: '#1E2328', borderRadius: 12, marginBottom: 10, border: '1px solid #2A2F38', overflow: 'hidden' };
-
-function ExerciseRow({ exercise, activeDate, allLifts, onAdd, onDelete }) {
-  const [weight, setWeight] = useState('');
-  const [reps, setReps] = useState('');
-  const [lastSession, setLastSession] = useState(null);
-  const [progression, setProgression] = useState([]);
-
-  useEffect(() => {
-    api.getLastSession(exercise).then(setLastSession).catch(() => {});
-    api.getProgression(exercise).then(setProgression).catch(() => {});
-  }, [exercise, allLifts]);
-
-  const todaySets = allLifts.filter(l => l.exercise === exercise);
-
-  const handleAdd = async () => {
-    if (!weight || !reps) return;
-    await onAdd({ exercise, weight: parseFloat(weight), reps: parseInt(reps), date: activeDate });
-    setWeight('');
-    setReps('');
-  };
-
-  return (
-    <div style={{ padding: '12px 14px', borderBottom: '1px solid #2A2F38' }}>
-      <div style={{ fontFamily: 'Barlow Condensed', fontSize: 17, fontWeight: 600, marginBottom: 6 }}>{exercise}</div>
-
-      {/* Last session */}
-      {lastSession?.date && (
-        <div style={{ fontSize: 12, color: '#9CA3AF', marginBottom: 6 }}>
-          Last: {lastSession.date} — {lastSession.sets.map(s => `${s.weight}×${s.reps}`).join(', ')}
-        </div>
-      )}
-
-      {/* Today's sets chips */}
-      {todaySets.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
-          {todaySets.map(s => (
-            <div key={s.id} style={{ background: '#2A2F38', borderRadius: 20, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
-              <span style={{ fontFamily: 'Barlow Condensed', color: '#FF6B35' }}>{s.weight}×{s.reps}</span>
-              <button onClick={() => onDelete(s.id)} style={{ background: 'none', border: 'none', color: '#6B7280', cursor: 'pointer', fontSize: 14, padding: 0, lineHeight: 1 }}>×</button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Add set */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-        <input
-          type="number"
-          placeholder="lbs"
-          value={weight}
-          onChange={e => setWeight(e.target.value)}
-          style={{ background: '#252A31', border: '1px solid #3A4048', borderRadius: 6, color: '#fff', padding: '6px 10px', fontSize: 14, width: 80 }}
-        />
-        <input
-          type="number"
-          placeholder="reps"
-          value={reps}
-          onChange={e => setReps(e.target.value)}
-          style={{ background: '#252A31', border: '1px solid #3A4048', borderRadius: 6, color: '#fff', padding: '6px 10px', fontSize: 14, width: 80 }}
-        />
-        <button
-          onClick={handleAdd}
-          style={{ background: '#FF6B35', border: 'none', color: '#fff', borderRadius: 6, padding: '6px 14px', fontFamily: 'Barlow Condensed', fontSize: 15, cursor: 'pointer', fontWeight: 600 }}
-        >
-          + Set
-        </button>
-      </div>
-
-      {/* Mini progression chart */}
-      {progression.length > 1 && (
-        <ResponsiveContainer width="100%" height={50}>
-          <LineChart data={progression}>
-            <Line type="monotone" dataKey="topWeight" stroke="#FF6B35" strokeWidth={2} dot={false} />
-            <Tooltip contentStyle={{ background: '#1E2328', border: 'none', fontSize: 11 }} formatter={v => [`${v} lbs`]} />
-          </LineChart>
-        </ResponsiveContainer>
-      )}
-    </div>
-  );
-}
+  { id: 'upper', name: 'Upper', exercises: ['Bench Press', 'Overhead Press', 'Barbell Row', 'Pull-ups'] },
+  { id: 'legs', name: 'Legs', exercises: ['Squat', 'Romanian Deadlift', 'Deadlift', 'Leg Press'] },
+  { id: 'arms', name: 'Arms (current)', exercises: ['Bicep Curl', 'Tricep Pushdown', 'Hammer Curl', 'Skull Crushers'] },
+  { id: 'arms_athletic', name: 'Arms+Athletic (recommended)', exercises: ['Bicep Curl', 'Tricep Pushdown', 'Lateral Raise', 'Face Pull'] },
+  { id: 'home', name: 'Home DB', exercises: ['DB Press', 'DB Row', 'DB Shoulder Press', 'DB Curl'] },
+]
 
 export default function Train() {
-  const { activeDate } = useApp();
-  const [expanded, setExpanded] = useState(null);
-  const [lifts, setLifts] = useState([]);
+  const { activeDate } = useApp()
+  const [expandedTemplate, setExpandedTemplate] = useState(null)
+  const [liftsToday, setLiftsToday] = useState({})
+  const [lastSession, setLastSession] = useState({})
+  const [progression, setProgression] = useState({})
+  const [inputs, setInputs] = useState({}) // { exercise: { weight, reps } }
 
-  const load = () => api.getLifts(activeDate).then(setLifts).catch(() => {});
-  useEffect(() => { load(); }, [activeDate]);
+  const fetchTemplateData = useCallback(async (templateId) => {
+    const template = TEMPLATES.find(t => t.id === templateId)
+    if (!template) return
 
-  const handleAdd = async (entry) => {
-    await api.addLift(entry);
-    load();
-  };
+    // Today's lifts
+    const res = await fetch(`/api/lifts?date=${activeDate}`)
+    const allLifts = await res.json()
+    const byExercise = {}
+    for (const ex of template.exercises) {
+      byExercise[ex] = allLifts.filter(l => l.exercise === ex)
+    }
+    setLiftsToday(byExercise)
 
-  const handleDelete = async (id) => {
-    await api.deleteLift(id);
-    load();
-  };
+    // Last session and progression for each exercise
+    const lastSessions = {}
+    const progressions = {}
+    await Promise.all(template.exercises.map(async ex => {
+      const [lsRes, pgRes] = await Promise.all([
+        fetch(`/api/lifts/last-session/${encodeURIComponent(ex)}`),
+        fetch(`/api/lifts/progression/${encodeURIComponent(ex)}`),
+      ])
+      lastSessions[ex] = await lsRes.json()
+      progressions[ex] = await pgRes.json()
+    }))
+    setLastSession(lastSessions)
+    setProgression(progressions)
+  }, [activeDate])
+
+  const handleExpand = (templateId) => {
+    if (expandedTemplate === templateId) {
+      setExpandedTemplate(null)
+    } else {
+      setExpandedTemplate(templateId)
+      fetchTemplateData(templateId)
+    }
+  }
+
+  const handleAddSet = async (exercise) => {
+    const inp = inputs[exercise] || {}
+    if (!inp.weight || !inp.reps) return
+    await fetch('/api/lifts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ exercise, weight: parseFloat(inp.weight), reps: parseInt(inp.reps), date: activeDate }),
+    })
+    setInputs(i => ({ ...i, [exercise]: { weight: inp.weight, reps: '' } }))
+    fetchTemplateData(expandedTemplate)
+  }
+
+  const handleDeleteSet = async (id) => {
+    await fetch(`/api/lifts/${id}`, { method: 'DELETE' })
+    fetchTemplateData(expandedTemplate)
+  }
+
+  const cardStyle = { background: '#1E2328', borderRadius: 12, marginBottom: 12, overflow: 'hidden' }
+  const inputStyle = {
+    background: '#14171C', border: '1px solid #3D4149', color: 'white',
+    borderRadius: 8, padding: '10px 12px', fontSize: 15,
+    fontFamily: 'Archivo, sans-serif', width: '100%',
+  }
 
   return (
-    <div style={{ padding: '16px 12px' }}>
-      {TEMPLATES.map(template => (
-        <div key={template.name} style={card}>
-          <button
-            onClick={() => setExpanded(expanded === template.name ? null : template.name)}
-            style={{
-              width: '100%', background: 'none', border: 'none', color: '#fff',
-              padding: '14px 16px', textAlign: 'left', cursor: 'pointer',
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-            }}
-          >
-            <span style={{ fontFamily: 'Barlow Condensed', fontSize: 18, fontWeight: 700 }}>{template.name}</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {/* Count today's lifts in this template */}
-              {(() => {
-                const count = lifts.filter(l => template.exercises.includes(l.exercise)).length;
-                return count > 0 ? <span style={{ background: '#FF6B35', borderRadius: 12, padding: '2px 8px', fontSize: 12, fontFamily: 'Barlow Condensed' }}>{count} sets</span> : null;
-              })()}
-              <span style={{ color: '#9CA3AF', fontSize: 18 }}>{expanded === template.name ? '▲' : '▼'}</span>
-            </div>
-          </button>
-          {expanded === template.name && (
-            <div>
-              {template.exercises.map(ex => (
-                <ExerciseRow
-                  key={ex}
-                  exercise={ex}
-                  activeDate={activeDate}
-                  allLifts={lifts}
-                  onAdd={handleAdd}
-                  onDelete={handleDelete}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      ))}
+    <div>
+      <div style={{
+        fontFamily: 'Barlow Condensed', fontSize: 13, fontWeight: 700,
+        color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12,
+      }}>
+        Workout Templates
+      </div>
+
+      {TEMPLATES.map(template => {
+        const isExpanded = expandedTemplate === template.id
+        return (
+          <div key={template.id} style={cardStyle}>
+            {/* Template header */}
+            <button
+              onClick={() => handleExpand(template.id)}
+              style={{
+                width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                background: 'none', border: 'none', color: 'white', padding: '16px',
+                cursor: 'pointer', textAlign: 'left',
+              }}
+            >
+              <span style={{ fontFamily: 'Barlow Condensed', fontSize: 18, fontWeight: 700 }}>
+                {template.name}
+              </span>
+              <span style={{ color: '#9CA3AF', fontSize: 18 }}>{isExpanded ? '▲' : '▼'}</span>
+            </button>
+
+            {isExpanded && (
+              <div style={{ padding: '0 16px 16px' }}>
+                {template.exercises.map(exercise => {
+                  const todaySets = liftsToday[exercise] || []
+                  const ls = lastSession[exercise]
+                  const prog = progression[exercise] || []
+                  const inp = inputs[exercise] || { weight: '', reps: '' }
+
+                  return (
+                    <div key={exercise} style={{
+                      background: '#14171C', borderRadius: 10, padding: 12, marginBottom: 12,
+                    }}>
+                      <div style={{ fontFamily: 'Barlow Condensed', fontSize: 16, fontWeight: 700, marginBottom: 8 }}>
+                        {exercise}
+                      </div>
+
+                      {/* Last session */}
+                      {ls && ls.sets && ls.sets.length > 0 ? (
+                        <div style={{ fontSize: 12, color: '#9CA3AF', marginBottom: 8 }}>
+                          Last ({ls.date}): {ls.sets.map(s => `${s.weight}x${s.reps}`).join(', ')}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 12, color: '#9CA3AF', marginBottom: 8 }}>No previous session</div>
+                      )}
+
+                      {/* Today's sets */}
+                      {todaySets.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                          {todaySets.map(set => (
+                            <div key={set.id} style={{
+                              display: 'flex', alignItems: 'center', gap: 4,
+                              background: '#2D3139', borderRadius: 6, padding: '4px 8px',
+                            }}>
+                              <span style={{ fontSize: 13 }}>{set.weight}x{set.reps}</span>
+                              <button
+                                onClick={() => handleDeleteSet(set.id)}
+                                style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer', fontSize: 14 }}
+                              >×</button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Add set */}
+                      <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                        <input
+                          type="number"
+                          placeholder="Weight"
+                          value={inp.weight}
+                          onChange={e => setInputs(i => ({ ...i, [exercise]: { ...inp, weight: e.target.value } }))}
+                          style={{ ...inputStyle, width: '50%' }}
+                        />
+                        <input
+                          type="number"
+                          placeholder="Reps"
+                          value={inp.reps}
+                          onChange={e => setInputs(i => ({ ...i, [exercise]: { ...inp, reps: e.target.value } }))}
+                          style={{ ...inputStyle, width: '30%' }}
+                        />
+                        <button
+                          onClick={() => handleAddSet(exercise)}
+                          style={{
+                            background: '#FF6B35', color: 'white', border: 'none',
+                            borderRadius: 8, padding: '8px 12px', fontSize: 13,
+                            fontWeight: 700, cursor: 'pointer', fontFamily: 'Barlow Condensed',
+                            flex: 1,
+                          }}
+                        >
+                          Add
+                        </button>
+                      </div>
+
+                      {/* Progression chart */}
+                      {prog.length > 1 && (
+                        <ResponsiveContainer width="100%" height={60}>
+                          <LineChart data={prog}>
+                            <Line type="monotone" dataKey="maxWeight" stroke="#FF6B35" dot={false} strokeWidth={2} />
+                            <Tooltip
+                              contentStyle={{ background: '#1E2328', border: 'none', borderRadius: 8 }}
+                              itemStyle={{ color: '#FF6B35' }}
+                            />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
-  );
+  )
 }

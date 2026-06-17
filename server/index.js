@@ -13,7 +13,6 @@ app.use('/api/weigh-ins', require('./routes/weigh-ins'));
 app.use('/api/checklist', require('./routes/checklist'));
 app.use('/api/sport', require('./routes/sport'));
 app.use('/api/settings', require('./routes/settings'));
-app.use('/api/dashboard', require('./routes/dashboard'));
 
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, '../client/dist')));

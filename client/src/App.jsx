@@ -1,92 +1,97 @@
-import React, { useState } from 'react';
-import { AppProvider, useApp } from './AppContext';
-import { todayStr, formatDate } from './utils';
-import Dashboard from './screens/Dashboard';
-import Today from './screens/Today';
-import Food from './screens/Food';
-import Train from './screens/Train';
-import Sport from './screens/Sport';
-import Body from './screens/Body';
+import React, { useState } from 'react'
+import { AppProvider, useApp } from './context/AppContext'
+import BottomNav from './components/BottomNav'
+import Dashboard from './screens/Dashboard'
+import Today from './screens/Today'
+import Food from './screens/Food'
+import Train from './screens/Train'
+import Sport from './screens/Sport'
+import Body from './screens/Body'
 
-const NAV = [
-  { id: 'dashboard', label: 'Dashboard', icon: '◈' },
-  { id: 'today', label: 'Today', icon: '✦' },
-  { id: 'food', label: 'Food', icon: '⊕' },
-  { id: 'train', label: 'Train', icon: '◉' },
-  { id: 'sport', label: 'Sport', icon: '◎' },
-  { id: 'body', label: 'Body', icon: '◐' },
-];
-
-function Shell() {
-  const [screen, setScreen] = useState('dashboard');
-  const { activeDate, setActiveDate } = useApp();
-  const isToday = activeDate === todayStr();
+function AppInner() {
+  const { activeDate, setActiveDate } = useApp()
+  const [activeScreen, setActiveScreen] = useState('today')
+  const today = new Date().toISOString().slice(0, 10)
 
   const screens = {
     dashboard: <Dashboard />,
-    today: <Today onNavigate={setScreen} />,
+    today: <Today />,
     food: <Food />,
     train: <Train />,
     sport: <Sport />,
     body: <Body />,
-  };
+  }
+
+  const formatDate = (d) => {
+    const dt = new Date(d + 'T00:00:00')
+    return dt.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+  }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#14171C', color: '#fff' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: '#14171C' }}>
       {/* Header */}
-      <div style={{ padding: '12px 16px', background: '#1E2328', borderBottom: '1px solid #2A2F38', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-        <span style={{ fontFamily: 'Barlow Condensed', fontWeight: 700, fontSize: 22, color: '#FF6B35', letterSpacing: 1 }}>FITLOG</span>
+      <header style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '12px 16px',
+        background: '#1E2328',
+        borderBottom: '1px solid #2D3139',
+        position: 'sticky',
+        top: 0,
+        zIndex: 100,
+      }}>
+        <span style={{
+          fontFamily: 'Barlow Condensed, sans-serif',
+          fontSize: 28,
+          fontWeight: 700,
+          color: '#FF6B35',
+          letterSpacing: 1,
+        }}>FitLog</span>
         <input
           type="date"
           value={activeDate}
           onChange={e => setActiveDate(e.target.value)}
           style={{
-            background: '#2A2F38', border: '1px solid #3A4048', borderRadius: 8,
-            color: '#fff', padding: '4px 10px', fontSize: 14, fontFamily: 'Archivo',
-            cursor: 'pointer'
+            background: '#14171C',
+            border: '1px solid #3D4149',
+            color: 'white',
+            borderRadius: 8,
+            padding: '6px 10px',
+            fontFamily: 'Archivo, sans-serif',
+            fontSize: 14,
           }}
         />
-      </div>
+      </header>
 
       {/* Backdating banner */}
-      {!isToday && (
-        <div style={{ background: '#7C5A00', color: '#FFD369', padding: '6px 16px', fontSize: 13, textAlign: 'center', flexShrink: 0 }}>
+      {activeDate !== today && (
+        <div style={{
+          background: '#F59E0B',
+          color: '#1a1a1a',
+          textAlign: 'center',
+          padding: '6px 16px',
+          fontSize: 13,
+          fontWeight: 500,
+        }}>
           Viewing {formatDate(activeDate)} — backdating mode
         </div>
       )}
 
-      {/* Screen content */}
-      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
-        {screens[screen]}
-      </div>
+      {/* Main content */}
+      <main style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
+        {screens[activeScreen]}
+      </main>
 
-      {/* Bottom nav */}
-      <div style={{ display: 'flex', background: '#1E2328', borderTop: '1px solid #2A2F38', flexShrink: 0 }}>
-        {NAV.map(n => (
-          <button
-            key={n.id}
-            onClick={() => setScreen(n.id)}
-            style={{
-              flex: 1, border: 'none', background: 'none', padding: '8px 4px 10px',
-              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
-              cursor: 'pointer',
-              color: screen === n.id ? '#FF6B35' : '#6B7280',
-              borderTop: screen === n.id ? '2px solid #FF6B35' : '2px solid transparent',
-            }}
-          >
-            <span style={{ fontSize: 18 }}>{n.icon}</span>
-            <span style={{ fontFamily: 'Barlow Condensed', fontSize: 11, letterSpacing: 0.5 }}>{n.label}</span>
-          </button>
-        ))}
-      </div>
+      <BottomNav activeScreen={activeScreen} setActiveScreen={setActiveScreen} />
     </div>
-  );
+  )
 }
 
 export default function App() {
   return (
     <AppProvider>
-      <Shell />
+      <AppInner />
     </AppProvider>
-  );
+  )
 }

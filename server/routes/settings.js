@@ -3,24 +3,25 @@ const router = express.Router();
 const db = require('../db');
 
 router.get('/', (req, res) => {
-  res.json(db.prepare('SELECT * FROM settings WHERE id = 1').get());
+  const row = db.prepare('SELECT * FROM settings WHERE id = 1').get();
+  res.json(row);
 });
 
 router.put('/', (req, res) => {
-  const { weekday_target, friday_target, weekend_target, protein_target, start_weight, goal_weight, goal_waist, goal_date } = req.body;
-  db.prepare(`
-    UPDATE settings SET
-      weekday_target = ?,
-      friday_target = ?,
-      weekend_target = ?,
-      protein_target = ?,
-      start_weight = ?,
-      goal_weight = ?,
-      goal_waist = ?,
-      goal_date = ?
-    WHERE id = 1
-  `).run(weekday_target, friday_target, weekend_target, protein_target, start_weight, goal_weight, goal_waist, goal_date);
-  res.json(db.prepare('SELECT * FROM settings WHERE id = 1').get());
+  const fields = ['weekday_target', 'friday_target', 'weekend_target', 'protein_target', 'start_weight', 'goal_weight', 'goal_waist', 'goal_date'];
+  const updates = [];
+  const values = [];
+  for (const f of fields) {
+    if (req.body[f] !== undefined) {
+      updates.push(`${f} = ?`);
+      values.push(req.body[f]);
+    }
+  }
+  if (updates.length > 0) {
+    db.prepare(`UPDATE settings SET ${updates.join(', ')} WHERE id = 1`).run(...values);
+  }
+  const row = db.prepare('SELECT * FROM settings WHERE id = 1').get();
+  res.json(row);
 });
 
 module.exports = router;

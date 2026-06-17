@@ -1,264 +1,258 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useApp } from '../AppContext';
-import { getMondayOfWeek, getDayType } from '../utils';
-import { api } from '../api';
+import React, { useState, useEffect, useCallback } from 'react'
+import { useApp } from '../context/AppContext'
+import IntervalTimer from '../components/IntervalTimer'
 
-const card = {
-  background: '#1E2328', borderRadius: 12, padding: '14px 16px',
-  marginBottom: 12, border: '1px solid #2A2F38',
-};
+const CHECKLIST_ITEMS = ['neck', 'core', 'abs', 'stretch']
+const CHECKLIST_TARGETS = { neck: 4, core: 2, abs: 2, stretch: 4 }
 
-// --- Interval Timer ---
-function IntervalTimer({ onComplete, onClose }) {
-  const SETS = 10;
-  const WORK = 50;
-  const REST = 10;
-
-  const [phase, setPhase] = useState('work'); // 'work' | 'rest' | 'done'
-  const [timeLeft, setTimeLeft] = useState(WORK);
-  const [setNum, setSetNum] = useState(1);
-  const [paused, setPaused] = useState(false);
-  const audioCtx = useRef(null);
-
-  function getAudioCtx() {
-    if (!audioCtx.current) audioCtx.current = new (window.AudioContext || window.webkitAudioContext)();
-    return audioCtx.current;
-  }
-
-  function beep(freq = 880, duration = 0.1, volume = 0.4) {
-    try {
-      const ctx = getAudioCtx();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(volume, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + duration);
-    } catch (e) {}
-  }
-
-  useEffect(() => {
-    if (paused || phase === 'done') return;
-    const interval = setInterval(() => {
-      setTimeLeft(t => {
-        if (t <= 3 && t > 1) beep(660, 0.08);
-        if (t === 1) {
-          if (phase === 'work') {
-            if (setNum >= SETS) {
-              setPhase('done');
-              beep(1046, 0.5);
-              onComplete && onComplete();
-              return 0;
-            } else {
-              setPhase('rest');
-              setTimeLeft(REST);
-              beep(440, 0.2);
-              return REST;
-            }
-          } else {
-            setSetNum(n => n + 1);
-            setPhase('work');
-            setTimeLeft(WORK);
-            beep(880, 0.2);
-            return WORK;
-          }
-        }
-        return t - 1;
-      });
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [paused, phase, setNum]);
-
-  if (phase === 'done') {
-    return (
-      <div style={{ position: 'fixed', inset: 0, background: '#14171C', zIndex: 1000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ fontFamily: 'Barlow Condensed', fontSize: 48, color: '#5FBF7E', fontWeight: 700 }}>DONE!</div>
-        <div style={{ color: '#9CA3AF', marginTop: 8, marginBottom: 32 }}>Core checked off</div>
-        <button onClick={onClose} style={{ background: '#FF6B35', border: 'none', color: '#fff', borderRadius: 10, padding: '12px 32px', fontFamily: 'Barlow Condensed', fontSize: 18, cursor: 'pointer' }}>Close</button>
-      </div>
-    );
-  }
-
-  const isWork = phase === 'work';
-  const phaseColor = isWork ? '#FF6B35' : '#5FBF7E';
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, background: '#14171C', zIndex: 1000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
-      <div style={{ fontFamily: 'Barlow Condensed', fontSize: 20, color: '#9CA3AF', letterSpacing: 2 }}>SET {setNum} / {SETS}</div>
-      <div style={{ fontFamily: 'Barlow Condensed', fontSize: 28, fontWeight: 700, color: phaseColor, letterSpacing: 3 }}>{isWork ? 'WORK' : 'REST'}</div>
-      <div style={{ fontFamily: 'Barlow Condensed', fontSize: 120, fontWeight: 700, color: '#fff', lineHeight: 1 }}>{timeLeft}</div>
-      <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
-        <button
-          onClick={() => setPaused(p => !p)}
-          style={{ background: '#2A2F38', border: 'none', color: '#fff', borderRadius: 10, padding: '12px 32px', fontFamily: 'Barlow Condensed', fontSize: 18, cursor: 'pointer' }}
-        >
-          {paused ? 'RESUME' : 'PAUSE'}
-        </button>
-        <button
-          onClick={onClose}
-          style={{ background: 'none', border: '1px solid #3A4048', color: '#9CA3AF', borderRadius: 10, padding: '12px 24px', fontFamily: 'Barlow Condensed', fontSize: 18, cursor: 'pointer' }}
-        >
-          CANCEL
-        </button>
-      </div>
-    </div>
-  );
+function getWeekDates(dateStr) {
+  const date = new Date(dateStr + 'T00:00:00')
+  const day = date.getDay()
+  const mon = new Date(date)
+  mon.setDate(date.getDate() - ((day + 6) % 7))
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(mon)
+    d.setDate(mon.getDate() + i)
+    return d.toISOString().slice(0, 10)
+  })
 }
 
-const ITEMS = ['neck', 'core', 'abs', 'stretch'];
-const ITEM_TARGETS = { neck: 4, core: 2, abs: 2, stretch: 4 };
+export default function Today() {
+  const { activeDate, settings } = useApp()
+  const [showTimer, setShowTimer] = useState(false)
+  const [checklist, setChecklist] = useState([])
+  const [food, setFood] = useState([])
+  const [todayWeight, setTodayWeight] = useState(null)
+  const [weekChecklist, setWeekChecklist] = useState({})
+  const [tiffMsg, setTiffMsg] = useState('')
 
-export default function Today({ onNavigate }) {
-  const { activeDate, settings } = useApp();
-  const weekStart = getMondayOfWeek(activeDate);
+  const fetchChecklist = useCallback(async () => {
+    const res = await fetch(`/api/checklist?date=${activeDate}`)
+    const data = await res.json()
+    setChecklist(data.map(r => r.item))
+  }, [activeDate])
 
-  const [checklist, setChecklist] = useState([]);
-  const [weeklyChecklist, setWeeklyChecklist] = useState({});
-  const [food, setFood] = useState([]);
-  const [latestWeighIn, setLatestWeighIn] = useState(null);
-  const [showTimer, setShowTimer] = useState(false);
+  const fetchFood = useCallback(async () => {
+    const res = await fetch(`/api/food?date=${activeDate}`)
+    setFood(await res.json())
+  }, [activeDate])
 
-  const load = () => {
-    api.getChecklist(activeDate).then(setChecklist).catch(() => {});
-    api.getWeeklyChecklist(weekStart).then(setWeeklyChecklist).catch(() => {});
-    api.getFood(activeDate).then(setFood).catch(() => {});
-    api.getLatestWeighIn().then(setLatestWeighIn).catch(() => {});
-  };
+  const fetchWeekChecklist = useCallback(async () => {
+    const weekDates = getWeekDates(activeDate)
+    const counts = {}
+    for (const item of CHECKLIST_ITEMS) counts[item] = 0
+    for (const d of weekDates) {
+      const res = await fetch(`/api/checklist?date=${d}`)
+      const data = await res.json()
+      for (const row of data) {
+        if (counts[row.item] !== undefined) counts[row.item]++
+      }
+    }
+    setWeekChecklist(counts)
+  }, [activeDate])
 
-  useEffect(() => { load(); }, [activeDate]);
+  const fetchWeight = useCallback(async () => {
+    const res = await fetch('/api/weigh-ins/latest')
+    const data = await res.json()
+    if (data && data.date === activeDate) setTodayWeight(data.weight)
+    else setTodayWeight(null)
+  }, [activeDate])
+
+  useEffect(() => {
+    fetchChecklist()
+    fetchFood()
+    fetchWeekChecklist()
+    fetchWeight()
+  }, [fetchChecklist, fetchFood, fetchWeekChecklist, fetchWeight])
 
   const toggleItem = async (item) => {
     if (checklist.includes(item)) {
-      await api.deleteChecklist(item, activeDate);
+      await fetch(`/api/checklist/${item}/${activeDate}`, { method: 'DELETE' })
     } else {
-      await api.addChecklist(item, activeDate);
+      await fetch('/api/checklist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ item, date: activeDate }),
+      })
     }
-    load();
-  };
-
-  const handleCoreComplete = async () => {
-    if (!checklist.includes('core')) {
-      await api.addChecklist('core', activeDate);
-    }
-    load();
-    setShowTimer(false);
-  };
+    fetchChecklist()
+    fetchWeekChecklist()
+  }
 
   const handleTiffxdan = async () => {
-    if (!checklist.includes('abs')) {
-      await api.addChecklist('abs', activeDate);
-      load();
-    }
-  };
+    await fetch('/api/checklist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ item: 'abs', date: activeDate }),
+    })
+    setTiffMsg('Abs logged!')
+    fetchChecklist()
+    fetchWeekChecklist()
+    setTimeout(() => setTiffMsg(''), 2000)
+  }
 
-  const { target } = getDayType(activeDate, settings);
-  const totalCals = food.reduce((s, f) => s + f.calories, 0);
-  const totalProtein = food.reduce((s, f) => s + f.protein, 0);
-  const remaining = target - totalCals;
+  const handleTimerComplete = async () => {
+    await fetch('/api/checklist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ item: 'core', date: activeDate }),
+    })
+    fetchChecklist()
+    fetchWeekChecklist()
+  }
+
+  const getDayType = () => {
+    const d = new Date(activeDate + 'T00:00:00')
+    const dow = d.getDay()
+    if (dow === 5) return { label: 'Friday', target: settings.friday_target }
+    if (dow === 0 || dow === 6) return { label: 'Weekend', target: settings.weekend_target }
+    return { label: 'Weekday', target: settings.weekday_target }
+  }
+
+  const { label: dayLabel, target: calTarget } = getDayType()
+  const totalCal = food.reduce((s, f) => s + f.calories, 0)
+  const totalProtein = food.reduce((s, f) => s + f.protein, 0)
+  const calPct = Math.min(100, (totalCal / calTarget) * 100)
+  const proteinPct = Math.min(100, (totalProtein / settings.protein_target) * 100)
+
+  const cardStyle = {
+    background: '#1E2328',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+  }
+
+  const sectionTitle = {
+    fontFamily: 'Barlow Condensed, sans-serif',
+    fontSize: 13,
+    fontWeight: 700,
+    color: '#9CA3AF',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 12,
+  }
 
   return (
-    <div style={{ padding: '16px 12px' }}>
+    <div>
       {showTimer && (
         <IntervalTimer
-          onComplete={handleCoreComplete}
           onClose={() => setShowTimer(false)}
+          onComplete={() => {
+            handleTimerComplete()
+            setTimeout(() => setShowTimer(false), 2000)
+          }}
         />
       )}
 
-      {/* Guided Routines */}
-      <div style={card}>
-        <div style={{ fontFamily: 'Barlow Condensed', fontSize: 14, color: '#9CA3AF', letterSpacing: 1, marginBottom: 10 }}>GUIDED ROUTINES</div>
-        <div style={{ display: 'flex', gap: 10 }}>
+      {/* Routines */}
+      <div style={cardStyle}>
+        <div style={sectionTitle}>Guided Routines</div>
+        <div style={{ display: 'flex', gap: 12 }}>
           <button
             onClick={() => setShowTimer(true)}
-            style={{ flex: 1, background: '#FF6B35', border: 'none', color: '#fff', borderRadius: 10, padding: '12px 8px', fontFamily: 'Barlow Condensed', fontSize: 15, fontWeight: 600, cursor: 'pointer' }}
+            style={{
+              flex: 1, background: '#FF6B35', color: 'white', border: 'none',
+              borderRadius: 10, padding: '12px 8px', fontSize: 15,
+              fontWeight: 600, cursor: 'pointer', fontFamily: 'Barlow Condensed',
+            }}
           >
             Golf Core 10-min
-            <div style={{ fontSize: 11, fontWeight: 400, opacity: 0.85, marginTop: 2 }}>50s/10s × 10 sets</div>
           </button>
           <button
             onClick={handleTiffxdan}
-            style={{ flex: 1, background: checklist.includes('abs') ? '#2A4A35' : '#2A2F38', border: `1px solid ${checklist.includes('abs') ? '#5FBF7E' : '#3A4048'}`, color: '#fff', borderRadius: 10, padding: '12px 8px', fontFamily: 'Barlow Condensed', fontSize: 15, fontWeight: 600, cursor: 'pointer' }}
+            style={{
+              flex: 1, background: '#3D4149', color: 'white', border: 'none',
+              borderRadius: 10, padding: '12px 8px', fontSize: 15,
+              fontWeight: 600, cursor: 'pointer', fontFamily: 'Barlow Condensed',
+            }}
           >
             Tiffxdan
-            <div style={{ fontSize: 11, fontWeight: 400, color: '#9CA3AF', marginTop: 2 }}>
-              {checklist.includes('abs') ? '✓ Abs done' : 'Marks abs done'}
-            </div>
           </button>
         </div>
+        {tiffMsg && <p style={{ color: '#5FBF7E', marginTop: 8, fontSize: 14 }}>{tiffMsg}</p>}
       </div>
 
-      {/* Daily Checklist */}
-      <div style={card}>
-        <div style={{ fontFamily: 'Barlow Condensed', fontSize: 14, color: '#9CA3AF', letterSpacing: 1, marginBottom: 10 }}>DAILY CHECKLIST</div>
-        {ITEMS.map(item => {
-          const done = checklist.includes(item);
-          const weekCount = weeklyChecklist[item] || 0;
-          const target = ITEM_TARGETS[item];
+      {/* Checklist */}
+      <div style={cardStyle}>
+        <div style={sectionTitle}>Daily Checklist</div>
+        {CHECKLIST_ITEMS.map(item => {
+          const done = checklist.includes(item)
+          const weekCount = weekChecklist[item] || 0
+          const target = CHECKLIST_TARGETS[item]
           return (
-            <div key={item} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <div key={item} style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '10px 0', borderBottom: '1px solid #2D3139',
+            }}>
+              <div>
+                <div style={{ fontWeight: 500, textTransform: 'capitalize', fontSize: 16 }}>{item}</div>
+                <div style={{ fontSize: 12, color: '#9CA3AF' }}>{weekCount}/{target} this week</div>
+              </div>
               <button
                 onClick={() => toggleItem(item)}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 10,
-                  background: done ? '#1A3529' : '#252A31',
-                  border: `1px solid ${done ? '#5FBF7E' : '#3A4048'}`,
-                  borderRadius: 8, padding: '10px 14px', cursor: 'pointer', flex: 1
+                  width: 36, height: 36, borderRadius: 8,
+                  background: done ? '#5FBF7E' : '#3D4149',
+                  border: 'none', cursor: 'pointer', color: 'white',
+                  fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}
               >
-                <span style={{ fontSize: 18, color: done ? '#5FBF7E' : '#6B7280' }}>{done ? '✓' : '○'}</span>
-                <span style={{ fontFamily: 'Barlow Condensed', fontSize: 16, color: '#fff', textTransform: 'capitalize' }}>{item}</span>
+                {done ? '✓' : ''}
               </button>
-              <span style={{ fontFamily: 'Barlow Condensed', fontSize: 14, color: weekCount >= target ? '#5FBF7E' : '#9CA3AF', marginLeft: 12, minWidth: 60, textAlign: 'right' }}>
-                {weekCount}/{target} wk
-              </span>
             </div>
-          );
+          )
         })}
       </div>
 
-      {/* Stats Tiles */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
-        {/* Calories */}
-        <div style={{ background: '#1E2328', borderRadius: 12, padding: '14px', border: '1px solid #2A2F38' }}>
-          <div style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 4 }}>CALORIES LEFT</div>
-          <div style={{ fontFamily: 'Barlow Condensed', fontSize: 36, fontWeight: 700, color: remaining >= 0 ? '#5FBF7E' : '#FF6B35' }}>
-            {remaining}
-          </div>
-          <div style={{ fontSize: 11, color: '#9CA3AF' }}>{totalCals} / {target}</div>
-          <div style={{ marginTop: 8, background: '#2A2F38', borderRadius: 4, height: 6, overflow: 'hidden' }}>
-            <div style={{ height: '100%', background: remaining >= 0 ? '#5FBF7E' : '#FF6B35', width: `${Math.min(100, (totalCals / target) * 100)}%`, borderRadius: 4, transition: 'width 0.3s' }} />
-          </div>
+      {/* Calories */}
+      <div style={cardStyle}>
+        <div style={sectionTitle}>Calories — {dayLabel}</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+          <span style={{ color: '#9CA3AF', fontSize: 14 }}>Target: {calTarget}</span>
+          <span style={{ fontSize: 14 }}>Consumed: <strong>{totalCal}</strong></span>
+          <span style={{ color: totalCal > calTarget ? '#EF4444' : '#5FBF7E', fontSize: 14 }}>
+            {totalCal > calTarget ? `+${totalCal - calTarget} over` : `${calTarget - totalCal} left`}
+          </span>
         </div>
-
-        {/* Protein */}
-        <div style={{ background: '#1E2328', borderRadius: 12, padding: '14px', border: '1px solid #2A2F38' }}>
-          <div style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 4 }}>PROTEIN</div>
-          <div style={{ fontFamily: 'Barlow Condensed', fontSize: 36, fontWeight: 700, color: totalProtein >= settings.protein_target ? '#5FBF7E' : '#fff' }}>
-            {totalProtein}g
-          </div>
-          <div style={{ fontSize: 11, color: '#9CA3AF' }}>goal {settings.protein_target}g</div>
-          <div style={{ marginTop: 8, background: '#2A2F38', borderRadius: 4, height: 6, overflow: 'hidden' }}>
-            <div style={{ height: '100%', background: '#5FBF7E', width: `${Math.min(100, (totalProtein / settings.protein_target) * 100)}%`, borderRadius: 4, transition: 'width 0.3s' }} />
-          </div>
+        <div style={{ background: '#3D4149', borderRadius: 6, height: 10 }}>
+          <div style={{
+            height: 10, borderRadius: 6,
+            background: totalCal > calTarget ? '#EF4444' : '#FF6B35',
+            width: `${calPct}%`,
+            transition: 'width 0.3s',
+          }} />
         </div>
       </div>
 
-      {/* Weight tile */}
-      <div
-        style={{ ...card, cursor: 'pointer' }}
-        onClick={() => onNavigate && onNavigate('body')}
-      >
-        <div style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 4 }}>TODAY'S WEIGHT</div>
-        <div style={{ fontFamily: 'Barlow Condensed', fontSize: 32, fontWeight: 700 }}>
-          {latestWeighIn?.weight ?? '—'}
-          <span style={{ fontSize: 14, color: '#9CA3AF' }}> lbs</span>
+      {/* Protein */}
+      <div style={cardStyle}>
+        <div style={sectionTitle}>Protein</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+          <span style={{ color: '#9CA3AF', fontSize: 14 }}>Target: {settings.protein_target}g</span>
+          <span style={{ fontSize: 14 }}>Consumed: <strong>{totalProtein}g</strong></span>
         </div>
-        <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 4 }}>Tap to log weigh-in →</div>
+        <div style={{ background: '#3D4149', borderRadius: 6, height: 10 }}>
+          <div style={{
+            height: 10, borderRadius: 6,
+            background: totalProtein >= settings.protein_target ? '#5FBF7E' : '#FF6B35',
+            width: `${proteinPct}%`,
+            transition: 'width 0.3s',
+          }} />
+        </div>
+      </div>
+
+      {/* Weight */}
+      <div style={cardStyle}>
+        <div style={sectionTitle}>Today's Weight</div>
+        <div style={{
+          fontFamily: 'Barlow Condensed, sans-serif',
+          fontSize: 48,
+          fontWeight: 700,
+          color: todayWeight ? 'white' : '#9CA3AF',
+        }}>
+          {todayWeight ? `${todayWeight} lbs` : '—'}
+        </div>
       </div>
     </div>
-  );
+  )
 }

@@ -4,3 +4,5 @@ server/fitlog.db
 server/fitlog.db-shm
 server/fitlog.db-wal
 client/dist/
+.env
+.env.local

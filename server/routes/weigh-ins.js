@@ -1,20 +1,23 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../db');
+const { pool } = require('../db');
 
-router.get('/latest', (req, res) => {
-  const row = db.prepare('SELECT * FROM weigh_ins ORDER BY date DESC LIMIT 1').get();
-  res.json(row || null);
+router.get('/latest', async (req, res) => {
+  const result = await pool.query('SELECT * FROM weigh_ins ORDER BY date DESC LIMIT 1');
+  res.json(result.rows[0] || null);
 });
 
-router.get('/', (req, res) => {
-  const rows = db.prepare('SELECT * FROM weigh_ins ORDER BY date ASC').all();
-  res.json(rows);
+router.get('/', async (req, res) => {
+  const result = await pool.query('SELECT * FROM weigh_ins ORDER BY date ASC');
+  res.json(result.rows);
 });
 
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   const { date, weight, waist } = req.body;
-  db.prepare('INSERT OR REPLACE INTO weigh_ins (date, weight, waist) VALUES (?, ?, ?)').run(date, weight, waist || null);
+  await pool.query(
+    'INSERT INTO weigh_ins (date, weight, waist) VALUES ($1, $2, $3) ON CONFLICT (date) DO UPDATE SET weight = EXCLUDED.weight, waist = EXCLUDED.waist',
+    [date, weight, waist || null]
+  );
   res.json({ ok: true });
 });
 

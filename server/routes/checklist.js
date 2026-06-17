@@ -1,21 +1,27 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../db');
+const { pool } = require('../db');
 
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   const { date } = req.query;
-  const rows = db.prepare('SELECT * FROM checklist_completions WHERE date = ?').all(date);
-  res.json(rows);
+  const result = await pool.query('SELECT * FROM checklist_completions WHERE date = $1', [date]);
+  res.json(result.rows);
 });
 
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   const { item, date } = req.body;
-  db.prepare('INSERT OR IGNORE INTO checklist_completions (item, date) VALUES (?, ?)').run(item, date);
+  await pool.query(
+    'INSERT INTO checklist_completions (item, date) VALUES ($1, $2) ON CONFLICT (item, date) DO NOTHING',
+    [item, date]
+  );
   res.json({ ok: true });
 });
 
-router.delete('/:item/:date', (req, res) => {
-  db.prepare('DELETE FROM checklist_completions WHERE item = ? AND date = ?').run(req.params.item, req.params.date);
+router.delete('/:item/:date', async (req, res) => {
+  await pool.query(
+    'DELETE FROM checklist_completions WHERE item = $1 AND date = $2',
+    [req.params.item, req.params.date]
+  );
   res.json({ ok: true });
 });
 

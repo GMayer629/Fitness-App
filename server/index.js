@@ -17,6 +17,7 @@ app.use((req, res, next) => {
 });
 
 app.use('/api/data', require('./routes/data'));
+// Legacy granular routes kept but not used by the frontend
 app.use('/api/food', require('./routes/food'));
 app.use('/api/meal-bank', require('./routes/meal-bank'));
 app.use('/api/lifts', require('./routes/lifts'));

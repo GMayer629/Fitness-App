@@ -15,6 +15,7 @@ async function initDb() {
         data TEXT NOT NULL
       )
     `);
+    // Legacy granular tables kept for reference
     await client.query(`CREATE TABLE IF NOT EXISTS food_log (id SERIAL PRIMARY KEY, name TEXT, calories INTEGER, protein INTEGER, date TEXT)`);
     await client.query(`CREATE TABLE IF NOT EXISTS meal_bank (id SERIAL PRIMARY KEY, name TEXT, calories INTEGER, protein INTEGER)`);
     await client.query(`CREATE TABLE IF NOT EXISTS lift_history (id SERIAL PRIMARY KEY, exercise TEXT, weight REAL, reps INTEGER, date TEXT)`);

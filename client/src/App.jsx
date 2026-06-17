@@ -48,6 +48,15 @@ const fmtDate = (iso) => {
   const [y, m, d] = iso.split("-");
   return `${Number(m)}/${Number(d)}`;
 };
+const lastNDates = (n) => {
+  const out = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    out.push(d.toLocaleDateString("en-CA"));
+  }
+  return out;
+};
 const isWeekendDay = (iso) => {
   const day = new Date(iso + "T12:00:00").getDay();
   return day === 6 || day === 0;
@@ -714,7 +723,7 @@ function TodayTab({ data, mutate, date }) {
             <div style={{ fontSize: 15, fontWeight: 600 }}>Abs · tiffxdan</div>
             <div style={{ color: C.muted, fontSize: 12 }}>run independently · 2x/wk · tap to check off</div>
           </div>
-          <Btn small kind="ghost" onClick={() => finishCheck("abs")}> Done</Btn>
+          <Btn small kind="ghost" onClick={() => finishCheck("abs")}>✓ Done</Btn>
         </div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "8px 0 2px" }}>
           <div>
@@ -1208,7 +1217,11 @@ export default function App() {
   const active = TABS.find((x) => x.id === tab);
 
   const exportData = () => {
-    const payload = { exportedAt: new Date().toISOString(), appVersion: "fitlog-v1", ...data };
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      appVersion: "fitlog-v1",
+      ...data,
+    };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");

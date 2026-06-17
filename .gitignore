@@ -1,0 +1,6 @@
+node_modules/
+client/node_modules/
+server/fitlog.db
+server/fitlog.db-shm
+server/fitlog.db-wal
+client/dist/

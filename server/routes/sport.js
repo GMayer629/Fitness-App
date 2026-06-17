@@ -2,31 +2,6 @@ const express = require('express');
 const router = express.Router();
 const { pool } = require('../db');
 
-function getWeekBounds() {
-  const today = new Date();
-  const day = today.getDay();
-  const mon = new Date(today);
-  mon.setDate(today.getDate() - ((day + 6) % 7));
-  const sun = new Date(mon);
-  sun.setDate(mon.getDate() + 6);
-  return { start: mon.toISOString().slice(0, 10), end: sun.toISOString().slice(0, 10) };
-}
-
-router.get('/weekly-summary', async (req, res) => {
-  const { start, end } = getWeekBounds();
-  const result = await pool.query(
-    'SELECT * FROM sport_sessions WHERE date >= $1 AND date <= $2',
-    [start, end]
-  );
-  const rows = result.rows;
-  res.json({
-    sessions: rows.length,
-    totalMinutes: rows.reduce((s, r) => s + r.minutes, 0),
-    holesWalked: rows.reduce((s, r) => s + (r.holes_walked || 0), 0),
-    holesCart: rows.reduce((s, r) => s + (r.holes_cart || 0), 0),
-  });
-});
-
 router.get('/', async (req, res) => {
   const { date } = req.query;
   const result = await pool.query('SELECT * FROM sport_sessions WHERE date = $1 ORDER BY id', [date]);

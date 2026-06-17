@@ -48,15 +48,6 @@ const fmtDate = (iso) => {
   const [y, m, d] = iso.split("-");
   return `${Number(m)}/${Number(d)}`;
 };
-const lastNDates = (n) => {
-  const out = [];
-  for (let i = n - 1; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    out.push(d.toLocaleDateString("en-CA"));
-  }
-  return out;
-};
 const isWeekendDay = (iso) => {
   const day = new Date(iso + "T12:00:00").getDay();
   return day === 6 || day === 0;
@@ -199,7 +190,7 @@ const Spark = ({ series, color }) => (
 );
 
 const Delta = ({ value, goodWhenDown, unit }) => {
-  if (value === 0) return <span style={{ color: C.muted, fontSize: 13 }}>—</span>;
+  if (value === 0) return <span style={{ color: C.muted, fontSize: 13 }}>&mdash;</span>;
   const good = goodWhenDown ? value < 0 : value > 0;
   return (
     <span style={{

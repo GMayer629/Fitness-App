@@ -18,15 +18,6 @@ router.get('/last-session/:exercise', async (req, res) => {
   res.json({ date: lastDate, sets: setsResult.rows.map(s => ({ id: s.id, weight: s.weight, reps: s.reps })) });
 });
 
-router.get('/progression/:exercise', async (req, res) => {
-  const { exercise } = req.params;
-  const result = await pool.query(
-    'SELECT date, MAX(weight) as "maxWeight" FROM lift_history WHERE exercise = $1 GROUP BY date ORDER BY date DESC LIMIT 20',
-    [exercise]
-  );
-  res.json(result.rows.reverse());
-});
-
 router.get('/', async (req, res) => {
   const { date } = req.query;
   const result = await pool.query('SELECT * FROM lift_history WHERE date = $1 ORDER BY id', [date]);

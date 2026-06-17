@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "^4.2.1",
+    "lucide-react": "^0.364.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "recharts": "^2.10.0",

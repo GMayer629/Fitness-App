@@ -1,37 +1,49 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const { initDb } = require('./db');
+const { initDb, pool } = require('./db');
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-const ready = initDb().catch(err => {
-  console.error('DB init failed:', err.message);
-  throw err; // keep promise rejected so middleware returns 503
-});
-
-app.use((req, res, next) => {
-  if (req.path === '/api/health') return next();
-  ready.then(() => next()).catch((err) => {
-    res.status(503).json({ error: 'Database unavailable — check POSTGRES_URL env var', detail: err.message });
-  });
-});
+// Fire-and-forget: attempt DB init on startup, but don't block routes
+initDb().catch(err => console.error('[initDb] startup init failed:', err.message));
 
 app.get('/api/health', async (req, res) => {
   try {
-    const { pool } = require('./db');
     await pool.query('SELECT 1');
-    res.json({ ok: true, db: 'connected' });
+    const tables = await pool.query(`
+      SELECT table_name FROM information_schema.tables
+      WHERE table_schema = 'public' ORDER BY table_name
+    `);
+    let dataCount = 0;
+    try {
+      const r = await pool.query('SELECT COUNT(*) FROM app_data');
+      dataCount = parseInt(r.rows[0].count, 10);
+    } catch {}
+    res.json({ ok: true, db: 'connected', tables: tables.rows.map(r => r.table_name), dataRows: dataCount });
   } catch (err) {
     res.status(503).json({ ok: false, error: err.message });
   }
 });
 
+app.get('/api/init', async (req, res) => {
+  try {
+    await initDb();
+    const tables = await pool.query(`
+      SELECT table_name FROM information_schema.tables
+      WHERE table_schema = 'public' ORDER BY table_name
+    `);
+    res.json({ ok: true, message: 'Database initialized', tables: tables.rows.map(r => r.table_name) });
+  } catch (err) {
+    console.error('[/api/init] error:', err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 app.use('/api/data', require('./routes/data'));
 app.use('/api/export', require('./routes/export'));
-// Legacy granular routes kept but not used by the frontend
 app.use('/api/food', require('./routes/food'));
 app.use('/api/meal-bank', require('./routes/meal-bank'));
 app.use('/api/lifts', require('./routes/lifts'));

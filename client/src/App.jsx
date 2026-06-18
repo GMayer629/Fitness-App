@@ -112,6 +112,9 @@ const seed = () => ({
   ],
   checklist: {},
   sports: {},
+  dailyRatings: {},
+  liftNotes: {},
+  injuries: [],
 });
 
 /* ---------- shared ui ---------- */
@@ -154,6 +157,38 @@ const Input = (props) => (
     color: C.text, padding: "9px 10px", fontSize: 15, fontFamily: "'Archivo', sans-serif",
     width: "100%", boxSizing: "border-box", ...props.style,
   }} />
+);
+
+const Textarea = (props) => (
+  <textarea {...props} style={{
+    background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8,
+    color: C.text, padding: "9px 10px", fontSize: 14, fontFamily: "'Archivo', sans-serif",
+    width: "100%", boxSizing: "border-box", resize: "vertical", minHeight: 60,
+    ...props.style,
+  }} />
+);
+
+const ratingColor = (n) => n >= 8 ? C.green : n >= 5 ? C.yellow : C.red;
+
+const RatingPicker = ({ value, onChange, label }) => (
+  <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0" }}>
+    <span style={{ color: C.muted, fontSize: 13, width: 52, flexShrink: 0 }}>{label}</span>
+    <div style={{ display: "flex", gap: 4, flex: 1 }}>
+      {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => {
+        const active = value === n;
+        return (
+          <div key={n} onClick={() => onChange(n === value ? null : n)} style={{
+            flex: 1, height: 28, borderRadius: 5, display: "flex", alignItems: "center",
+            justifyContent: "center", fontSize: 12, fontWeight: 700, cursor: "pointer",
+            background: active ? ratingColor(n) : C.card2,
+            color: active ? "#14171C" : n <= (value || 0) ? ratingColor(n) : C.muted,
+            border: `1px solid ${active ? ratingColor(n) : C.border}`,
+            transition: "background 0.1s",
+          }}>{n}</div>
+        );
+      })}
+    </div>
+  </div>
 );
 
 /* ---------- barbell goal meter ---------- */
@@ -386,6 +421,7 @@ function SportTab({ data, mutate, date }) {
   const [walked, setWalked] = useState("");
   const [cart, setCart] = useState("");
   const [custom, setCustom] = useState("");
+  const [sportNote, setSportNote] = useState("");
 
   const sports = data.sports || {};
   const entries = sports[t] || [];
@@ -398,8 +434,9 @@ function SportTab({ data, mutate, date }) {
     if (type === "Cardio") name = custom.trim() ? `Cardio — ${custom.trim()}` : "Cardio";
     const e = { id: Date.now(), activity: name, minutes: Number(mins) || 0 };
     if (type === "Golf") { e.holesWalked = Number(walked) || 0; e.holesCart = Number(cart) || 0; }
+    if (sportNote.trim()) e.notes = sportNote.trim();
     mutate((d) => { d.sports = { ...(d.sports || {}), [t]: [...((d.sports || {})[t] || []), e] }; });
-    setMins(""); setWalked(""); setCart(""); setCustom("");
+    setMins(""); setWalked(""); setCart(""); setCustom(""); setSportNote("");
   };
   const removeEntry = (id) =>
     mutate((d) => { d.sports = { ...d.sports, [t]: (d.sports[t] || []).filter((e) => e.id !== id) }; });
@@ -474,6 +511,8 @@ function SportTab({ data, mutate, date }) {
               value={mins} onChange={(e) => setMins(e.target.value)} />
             <Btn onClick={logSport} disabled={!canLog}><Plus size={15} /> Log</Btn>
           </div>
+          <Textarea placeholder="Notes (optional — course conditions, how you played, felt...)"
+            value={sportNote} onChange={(e) => setSportNote(e.target.value)} style={{ minHeight: 48 }} />
         </div>
       </Card>
 
@@ -485,6 +524,7 @@ function SportTab({ data, mutate, date }) {
             <div style={{ flex: 1 }}>
               <span style={{ fontSize: 15, fontWeight: 600 }}>{e.activity}</span>
               <span style={{ color: C.muted, fontSize: 13, marginLeft: 8 }}>{describe(e)}</span>
+              {e.notes && <div style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>{e.notes}</div>}
             </div>
             <div style={{ color: C.muted, fontSize: 13, marginRight: 10 }}>{fmtDate(e.date)}</div>
             {e.date === t && <X size={15} color={C.muted} style={{ cursor: "pointer" }} onClick={() => removeEntry(e.id)} />}
@@ -671,6 +711,11 @@ function TodayTab({ data, mutate, date }) {
       d.checklist = { ...d.checklist, [t]: day };
     });
   const checks = data.checklist[t] || {};
+  const ratings = (data.dailyRatings || {})[t] || {};
+  const setRating = (key, val) =>
+    mutate((d) => {
+      d.dailyRatings = { ...(d.dailyRatings || {}), [t]: { ...((d.dailyRatings || {})[t] || {}), [key]: val } };
+    });
   const log = data.foodLog[t] || [];
   const cal = log.reduce((s, e) => s + (e.cal || 0), 0);
   const pro = log.reduce((s, e) => s + (e.protein || 0), 0);
@@ -756,6 +801,13 @@ function TodayTab({ data, mutate, date }) {
             </div>
           );
         })}
+      </Card>
+      <Card>
+        <Eyebrow>Daily check-in</Eyebrow>
+        <RatingPicker label="Energy" value={ratings.energy ?? null} onChange={(v) => setRating("energy", v)} />
+        <RatingPicker label="Sleep" value={ratings.sleep ?? null} onChange={(v) => setRating("sleep", v)} />
+        <RatingPicker label="Feel" value={ratings.feel ?? null} onChange={(v) => setRating("feel", v)} />
+        <div style={{ color: C.muted, fontSize: 12, marginTop: 4 }}>Tap to rate 1–10 · tap again to clear · used for LLM trend analysis</div>
       </Card>
       {activeTimer === "core" && (
         <IntervalTimer audioCtx={audioCtx} title="Golf core" sequence={CORE_SEQ}
@@ -1036,6 +1088,14 @@ function TrainTab({ data, mutate, date }) {
             setExtra("");
           }}><Plus size={14} /> Add</Btn>
         </div>
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontSize: 12, color: C.muted, marginBottom: 6 }}>Session notes (optional)</div>
+          <Textarea
+            placeholder="How did the session feel? Any PRs, soreness, technique notes..."
+            value={(data.liftNotes || {})[t] || ""}
+            onChange={(e) => mutate((d) => { d.liftNotes = { ...(d.liftNotes || {}), [t]: e.target.value }; })}
+          />
+        </div>
       </Card>
 
       {allEx.length > 0 && (
@@ -1074,6 +1134,8 @@ function BodyTab({ data, mutate, date }) {
   const [w, setW] = useState("");
   const [waist, setWaist] = useState("");
   const [showSettings, setShowSettings] = useState(false);
+  const [injuryForm, setInjuryForm] = useState({ bodyPart: "", severity: null, notes: "" });
+  const [showInjuryForm, setShowInjuryForm] = useState(false);
   const s = data.settings;
   const sorted = useMemo(() => [...data.weighIns].sort((a, b) => a.date.localeCompare(b.date)), [data.weighIns]);
   const latest = sorted[sorted.length - 1];
@@ -1164,6 +1226,73 @@ function BodyTab({ data, mutate, date }) {
           </div>
         )}
       </Card>
+
+      <Card>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <Eyebrow style={{ marginBottom: 0 }}>Injury / symptom log</Eyebrow>
+          <Btn small kind="ghost" onClick={() => setShowInjuryForm((x) => !x)}>
+            <Plus size={13} /> {showInjuryForm ? "Cancel" : "Add"}
+          </Btn>
+        </div>
+        {showInjuryForm && (
+          <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+            <Input
+              placeholder="Body part (e.g. left knee, lower back, shoulder)"
+              value={injuryForm.bodyPart}
+              onChange={(e) => setInjuryForm((f) => ({ ...f, bodyPart: e.target.value }))}
+            />
+            <div>
+              <div style={{ fontSize: 12, color: C.muted, marginBottom: 6 }}>Severity</div>
+              <RatingPicker
+                label=""
+                value={injuryForm.severity}
+                onChange={(v) => setInjuryForm((f) => ({ ...f, severity: v }))}
+              />
+            </div>
+            <Textarea
+              placeholder="Notes (onset, activity that caused it, what makes it worse/better...)"
+              value={injuryForm.notes}
+              onChange={(e) => setInjuryForm((f) => ({ ...f, notes: e.target.value }))}
+            />
+            <Btn disabled={!injuryForm.bodyPart} onClick={() => {
+              if (!injuryForm.bodyPart) return;
+              mutate((d) => {
+                d.injuries = [...(d.injuries || []), {
+                  id: Date.now(), date, bodyPart: injuryForm.bodyPart,
+                  severity: injuryForm.severity, notes: injuryForm.notes,
+                }];
+              });
+              setInjuryForm({ bodyPart: "", severity: null, notes: "" });
+              setShowInjuryForm(false);
+            }}>Log injury</Btn>
+          </div>
+        )}
+        <div style={{ marginTop: showInjuryForm ? 12 : 8, display: "flex", flexDirection: "column", gap: 0 }}>
+          {(data.injuries || []).length === 0 && !showInjuryForm && (
+            <div style={{ color: C.muted, fontSize: 14 }}>No injuries logged.</div>
+          )}
+          {[...(data.injuries || [])].sort((a, b) => b.date.localeCompare(a.date)).map((inj) => (
+            <div key={inj.id} style={{ padding: "10px 0", borderBottom: `1px solid ${C.border}`, display: "flex", gap: 10 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontWeight: 600, fontSize: 15 }}>{inj.bodyPart}</span>
+                  {inj.severity && (
+                    <span style={{
+                      fontSize: 12, fontWeight: 700, padding: "2px 7px", borderRadius: 10,
+                      background: ratingColor(inj.severity) + "33",
+                      color: ratingColor(inj.severity),
+                    }}>sev {inj.severity}</span>
+                  )}
+                  <span style={{ color: C.muted, fontSize: 12 }}>{fmtDate(inj.date)}</span>
+                </div>
+                {inj.notes && <div style={{ color: C.muted, fontSize: 13, marginTop: 3 }}>{inj.notes}</div>}
+              </div>
+              <X size={15} color={C.muted} style={{ cursor: "pointer", flexShrink: 0, marginTop: 4 }}
+                onClick={() => mutate((d) => { d.injuries = (d.injuries || []).filter((x) => x.id !== inj.id); })} />
+            </div>
+          ))}
+        </div>
+      </Card>
     </div>
   );
 }
@@ -1184,6 +1313,9 @@ export default function App() {
         if (!d.settings.fridayTarget) d.settings.fridayTarget = 2100;
         if (!d.settings.weekdayTarget) d.settings.weekdayTarget = 1900;
         if (!d.sports) d.sports = {};
+        if (!d.dailyRatings) d.dailyRatings = {};
+        if (!d.liftNotes) d.liftNotes = {};
+        if (!d.injuries) d.injuries = [];
         setData(d);
       })
       .catch(() => setData(seed()));

@@ -65,3 +65,27 @@ CREATE TABLE IF NOT EXISTS public.settings (
 );
 
 INSERT INTO public.settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
+-- Added for LLM integration: daily check-in ratings
+CREATE TABLE IF NOT EXISTS public.daily_ratings (
+  id SERIAL PRIMARY KEY,
+  date TEXT NOT NULL UNIQUE,
+  energy INTEGER CHECK (energy BETWEEN 1 AND 10),
+  sleep INTEGER CHECK (sleep BETWEEN 1 AND 10),
+  feel INTEGER CHECK (feel BETWEEN 1 AND 10)
+);
+
+-- Added for LLM integration: lift session notes (one note per date)
+ALTER TABLE public.lift_history ADD COLUMN IF NOT EXISTS notes TEXT;
+
+-- Added for LLM integration: sport session notes
+ALTER TABLE public.sport_sessions ADD COLUMN IF NOT EXISTS notes TEXT;
+
+-- Added for LLM integration: injury / symptom log
+CREATE TABLE IF NOT EXISTS public.injuries (
+  id SERIAL PRIMARY KEY,
+  date TEXT NOT NULL,
+  body_part TEXT NOT NULL,
+  severity INTEGER CHECK (severity BETWEEN 1 AND 10),
+  notes TEXT
+);

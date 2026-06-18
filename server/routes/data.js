@@ -37,6 +37,9 @@ const SEED = {
   ],
   checklist: {},
   sports: {},
+  dailyRatings: {},
+  liftNotes: {},
+  injuries: [],
 };
 
 router.get('/', async (req, res) => {

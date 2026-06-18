@@ -7,6 +7,7 @@ function cleanUrl(url) {
     const u = new URL(url);
     u.searchParams.delete('pgbouncer');
     u.searchParams.delete('workaround');
+    u.searchParams.delete('sslmode');
     return u.toString();
   } catch {
     return url;

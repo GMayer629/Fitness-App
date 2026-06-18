@@ -40,21 +40,31 @@ const SEED = {
 };
 
 router.get('/', async (req, res) => {
-  const result = await pool.query('SELECT data FROM app_data WHERE id = 1');
-  if (!result.rows[0]) {
-    await pool.query('INSERT INTO app_data (id, data) VALUES (1, $1)', [JSON.stringify(SEED)]);
-    return res.json(SEED);
+  try {
+    const result = await pool.query('SELECT data FROM app_data WHERE id = 1');
+    if (!result.rows[0]) {
+      await pool.query('INSERT INTO app_data (id, data) VALUES (1, $1)', [JSON.stringify(SEED)]);
+      return res.json(SEED);
+    }
+    res.json(JSON.parse(result.rows[0].data));
+  } catch (err) {
+    console.error('GET /api/data error:', err.message);
+    res.status(503).json({ error: err.message });
   }
-  res.json(JSON.parse(result.rows[0].data));
 });
 
 router.put('/', async (req, res) => {
-  const data = req.body;
-  await pool.query(
-    'INSERT INTO app_data (id, data) VALUES (1, $1) ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data',
-    [JSON.stringify(data)]
-  );
-  res.json({ ok: true });
+  try {
+    const data = req.body;
+    await pool.query(
+      'INSERT INTO app_data (id, data) VALUES (1, $1) ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data',
+      [JSON.stringify(data)]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('PUT /api/data error:', err.message);
+    res.status(503).json({ error: err.message });
+  }
 });
 
 module.exports = router;

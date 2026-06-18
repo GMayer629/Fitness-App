@@ -1,14 +1,11 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const { initDb, pool } = require('./db');
+const { pool } = require('./db');
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
-
-// Fire-and-forget DB init on startup
-initDb().catch(err => console.error('[initDb] startup init failed:', err.message));
 
 app.get('/api/health', async (req, res) => {
   try {
@@ -28,40 +25,46 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
-// Shows which env vars are set and what host/port each URL resolves to
+// Returns connection info (no passwords) to diagnose env var issues
 app.get('/api/debug', (req, res) => {
   const scrub = (url) => {
     if (!url) return null;
     try {
       const u = new URL(url);
-      return { host: u.hostname, port: u.port, db: u.pathname, hasPassword: !!u.password };
+      return { host: u.hostname, port: u.port || '5432', db: u.pathname };
     } catch { return 'invalid url'; }
   };
   res.json({
     POSTGRES_URL: scrub(process.env.POSTGRES_URL),
-    POSTGRES_URL_NON_POOLING: scrub(process.env.POSTGRES_URL_NON_POOLING),
-    initDbUsing: process.env.POSTGRES_URL_NON_POOLING ? 'POSTGRES_URL_NON_POOLING' : 'POSTGRES_URL (pooler — DDL may be dropped!)',
     NODE_ENV: process.env.NODE_ENV,
   });
 });
 
+// Verifies that all required tables exist — does NOT create them.
+// To create tables, run the SQL from server/schema.sql in Supabase SQL Editor.
 app.get('/api/init', async (req, res) => {
+  const REQUIRED = ['app_data', 'food_log', 'meal_bank', 'lift_history', 'weigh_ins', 'checklist_completions', 'sport_sessions', 'settings'];
   try {
-    const { results, tablesFound } = await initDb();
-    const failed = results.filter(r => !r.ok);
+    const result = await pool.query(`
+      SELECT table_name FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = ANY($1)
+    `, [REQUIRED]);
+    const found = result.rows.map(r => r.table_name);
+    const missing = REQUIRED.filter(t => !found.includes(t));
     res.json({
-      ok: failed.length === 0,
-      message: failed.length === 0 ? 'Database initialized' : 'Some tables failed — check errors',
-      tablesCreated: results,
-      tablesVerified: tablesFound,
+      ok: missing.length === 0,
+      tablesFound: found,
+      tablesMissing: missing,
+      message: missing.length === 0
+        ? 'All tables present — app is ready'
+        : `Missing tables: ${missing.join(', ')}. Run server/schema.sql in Supabase SQL Editor.`,
     });
   } catch (err) {
-    console.error('[/api/init] error:', err.message);
     res.status(500).json({ ok: false, error: err.message });
   }
 });
 
-// Direct write test — inserts a hardcoded row into public.weigh_ins
+// Direct write test
 app.get('/api/test-write', async (req, res) => {
   console.log('[/api/test-write] hit');
   try {

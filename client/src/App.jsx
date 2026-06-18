@@ -3,7 +3,7 @@ import {
   LineChart, Line, XAxis, YAxis, Tooltip, ReferenceLine, ResponsiveContainer, CartesianGrid,
 } from "recharts";
 import {
-  ClipboardCheck, Utensils, Dumbbell, TrendingUp, Plus, X, RotateCcw, Settings, Check, LayoutDashboard, Trophy, Download,
+  ClipboardCheck, Utensils, Dumbbell, TrendingUp, Plus, X, RotateCcw, Settings, Check, LayoutDashboard, Trophy, Download, MessageSquare, Send,
 } from "lucide-react";
 
 /* ---------- constants ---------- */
@@ -115,6 +115,7 @@ const seed = () => ({
   dailyRatings: {},
   liftNotes: {},
   injuries: [],
+  chatHistory: [],
 });
 
 /* ---------- shared ui ---------- */
@@ -1297,6 +1298,167 @@ function BodyTab({ data, mutate, date }) {
   );
 }
 
+/* ---------- chat tab ---------- */
+function ChatTab({ data }) {
+  const [messages, setMessages] = useState(() => {
+    const saved = (data.chatHistory || []);
+    return saved.length ? saved : [];
+  });
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, loading]);
+
+  const buildContext = () => {
+    const today = new Date().toLocaleDateString("en-CA");
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 14);
+    const cutoffStr = cutoff.toLocaleDateString("en-CA");
+
+    const recentWeighIns = [...(data.weighIns || [])]
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .slice(0, 5);
+
+    const recentFood = [];
+    Object.entries(data.foodLog || {}).forEach(([date, entries]) => {
+      if (date >= cutoffStr) {
+        (entries || []).forEach(e => recentFood.push({ date, ...e }));
+      }
+    });
+    recentFood.sort((a, b) => b.date.localeCompare(a.date));
+
+    const recentLifts = [];
+    Object.entries(data.lifts || {}).forEach(([date, sets]) => {
+      if (date >= cutoffStr) {
+        (sets || []).forEach(s => recentLifts.push({ date, ...s }));
+      }
+    });
+    recentLifts.sort((a, b) => b.date.localeCompare(a.date));
+
+    const recentSports = Object.entries(data.sports || {})
+      .filter(([date]) => date >= cutoffStr)
+      .flatMap(([date, sessions]) => (sessions || []).map(s => ({ date, ...s })))
+      .sort((a, b) => b.date.localeCompare(a.date));
+
+    return {
+      settings: data.settings,
+      recentWeighIns,
+      recentFood: recentFood.slice(0, 30),
+      recentLifts: recentLifts.slice(0, 30),
+      recentSports,
+      injuries: (data.injuries || []).slice(-10),
+    };
+  };
+
+  const send = async () => {
+    const text = input.trim();
+    if (!text || loading) return;
+    const userMsg = { role: "user", content: text };
+    const next = [...messages, userMsg];
+    setMessages(next);
+    setInput("");
+    setLoading(true);
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: next, context: buildContext() }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+      const aiMsg = { role: "assistant", content: body.reply };
+      setMessages(prev => [...prev, aiMsg]);
+    } catch (err) {
+      setMessages(prev => [...prev, { role: "assistant", content: `Error: ${err.message}` }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+      <Card style={{ padding: 0, overflow: "hidden" }}>
+        <div style={{ padding: "12px 14px", borderBottom: `1px solid ${C.border}` }}>
+          <Eyebrow>AI Coach</Eyebrow>
+          <div style={{ color: C.muted, fontSize: 13 }}>Ask about nutrition, workouts, or get personalized advice based on your data.</div>
+        </div>
+        <div style={{ minHeight: 340, maxHeight: 480, overflowY: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
+          {messages.length === 0 && (
+            <div style={{ color: C.muted, fontSize: 14, textAlign: "center", padding: "40px 20px" }}>
+              Ask me anything about your fitness, nutrition, or workouts. I have full context from your data.
+            </div>
+          )}
+          {messages.map((m, i) => (
+            <div key={i} style={{
+              display: "flex",
+              justifyContent: m.role === "user" ? "flex-end" : "flex-start",
+            }}>
+              <div style={{
+                maxWidth: "85%",
+                background: m.role === "user" ? C.accent : C.card2,
+                color: m.role === "user" ? "#14171C" : C.text,
+                borderRadius: m.role === "user" ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
+                padding: "10px 13px",
+                fontSize: 14,
+                lineHeight: 1.5,
+                whiteSpace: "pre-wrap",
+              }}>
+                {m.content}
+              </div>
+            </div>
+          ))}
+          {loading && (
+            <div style={{ display: "flex", justifyContent: "flex-start" }}>
+              <div style={{
+                background: C.card2, borderRadius: "14px 14px 14px 4px",
+                padding: "10px 16px", display: "flex", gap: 5, alignItems: "center",
+              }}>
+                {[0, 1, 2].map(i => (
+                  <div key={i} style={{
+                    width: 7, height: 7, borderRadius: "50%", background: C.muted,
+                    animation: `bounce 1.2s ease-in-out ${i * 0.2}s infinite`,
+                  }} />
+                ))}
+              </div>
+            </div>
+          )}
+          <div ref={bottomRef} />
+        </div>
+        <div style={{ padding: "10px 14px", borderTop: `1px solid ${C.border}`, display: "flex", gap: 8 }}>
+          <input
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && !e.shiftKey && send()}
+            placeholder="Ask your coach…"
+            style={{
+              flex: 1, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8,
+              color: C.text, padding: "9px 12px", fontSize: 14,
+              fontFamily: "'Archivo', sans-serif", outline: "none",
+            }}
+          />
+          <button onClick={send} disabled={loading || !input.trim()} style={{
+            background: C.accent, border: "none", borderRadius: 8, width: 40, height: 40,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            cursor: loading || !input.trim() ? "default" : "pointer",
+            opacity: loading || !input.trim() ? 0.4 : 1, flexShrink: 0,
+          }}>
+            <Send size={17} color="#14171C" />
+          </button>
+        </div>
+      </Card>
+      <style>{`
+        @keyframes bounce {
+          0%, 80%, 100% { transform: translateY(0); }
+          40% { transform: translateY(-6px); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
 /* ---------- app ---------- */
 export default function App() {
   const [data, setData] = useState(null);
@@ -1316,6 +1478,7 @@ export default function App() {
         if (!d.dailyRatings) d.dailyRatings = {};
         if (!d.liftNotes) d.liftNotes = {};
         if (!d.injuries) d.injuries = [];
+        if (!d.chatHistory) d.chatHistory = [];
         setData(d);
       })
       .catch(() => setData(seed()));
@@ -1359,6 +1522,7 @@ export default function App() {
     { id: "train", label: "Train", icon: Dumbbell, el: <TrainTab data={data} mutate={mutate} date={activeDate} /> },
     { id: "sport", label: "Sport", icon: Trophy, el: <SportTab data={data} mutate={mutate} date={activeDate} /> },
     { id: "body", label: "Body", icon: TrendingUp, el: <BodyTab data={data} mutate={mutate} date={activeDate} /> },
+    { id: "chat", label: "Chat", icon: MessageSquare, el: <ChatTab data={data} mutate={mutate} /> },
   ];
   const active = TABS.find((x) => x.id === tab);
 

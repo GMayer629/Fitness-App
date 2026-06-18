@@ -40,6 +40,7 @@ const SEED = {
   dailyRatings: {},
   liftNotes: {},
   injuries: [],
+  chatHistory: [],
 };
 
 router.get('/', async (req, res) => {

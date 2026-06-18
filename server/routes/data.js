@@ -42,10 +42,10 @@ const SEED = {
 router.get('/', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   try {
-    const result = await pool.query('SELECT data FROM app_data WHERE id = 1');
+    const result = await pool.query('SELECT data FROM public.app_data WHERE id = 1');
     if (!result.rows[0]) {
       console.log('[GET /api/data] no row found, seeding');
-      await pool.query('INSERT INTO app_data (id, data) VALUES (1, $1)', [JSON.stringify(SEED)]);
+      await pool.query('INSERT INTO public.app_data (id, data) VALUES (1, $1)', [JSON.stringify(SEED)]);
       return res.json(SEED);
     }
     console.log('[GET /api/data] returning saved data');
@@ -60,7 +60,7 @@ router.put('/', async (req, res) => {
   try {
     const data = req.body;
     await pool.query(
-      'INSERT INTO app_data (id, data) VALUES (1, $1) ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()',
+      'INSERT INTO public.app_data (id, data) VALUES (1, $1) ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()',
       [JSON.stringify(data)]
     );
     console.log('[PUT /api/data] saved ok, size:', JSON.stringify(data).length);

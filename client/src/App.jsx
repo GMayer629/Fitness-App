@@ -277,18 +277,19 @@ function DashTab({ data }) {
     };
   };
 
+  const weekBudget = 4 * s.weekdayTarget + (s.fridayTarget ?? s.weekdayTarget) + 2 * s.weekendTarget;
   const weeks = [];
+  const thisMon = currentWeekDates()[0];
   for (let o = 3; o >= 0; o--) {
-    const m = new Date();
-    m.setDate(m.getDate() - (m.getDay() + 6) % 7 - o * 7);
+    const m = new Date(thisMon + "T12:00:00");
+    m.setDate(m.getDate() - 7 * o);
     let total = 0, logged = 0;
     for (let i = 0; i < 7; i++) {
-      const d = new Date(m);
-      d.setDate(m.getDate() + i);
-      const dk = d.toLocaleDateString("en-CA");
-      if (dk > todayKey()) break;
-      total++;
-      if ((data.foodLog[dk] || []).length > 0) logged++;
+      const d = new Date(m); d.setDate(m.getDate() + i);
+      const k = d.toLocaleDateString("en-CA");
+      const dayCal = (data.foodLog[k] || []).reduce((s3, e) => s3 + (e.cal || 0), 0);
+      total += dayCal;
+      if (dayCal > 0) logged++;
     }
     weeks.push({ label: `wk of ${fmtDate(m.toLocaleDateString("en-CA"))}`, total, logged, current: o === 0 });
   }
@@ -296,11 +297,38 @@ function DashTab({ data }) {
 
   const wk = currentWeekDates();
   const liftDays = wk.filter((d) =>
-    d <= todayKey() && Object.values(data.lifts || {}).some((arr) => arr.some((s) => s.date === d))
-  );
+    Object.values(data.lifts).some((h) => (h || []).some((s2) => s2.date === d))
+  ).length;
+  const sportSessions = wk.reduce((n, d) => n + ((data.sports || {})[d] || []).length, 0);
+  const checkCount = (id) => wk.filter((d) => data.checklist[d]?.[id]).length;
+  const consistency = [
+    { label: "Lifts", n: liftDays, target: 3 },
+    { label: "Sprt·Cdo", n: sportSessions, target: 4 },
+    { label: "Neck", n: checkCount("neck"), target: 4 },
+    { label: "Core", n: checkCount("core"), target: 2 },
+    { label: "Abs", n: checkCount("abs"), target: 2 },
+    { label: "Stretch", n: checkCount("stretch"), target: 4 },
+  ];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <Card>
+        <Eyebrow>Consistency — this week</Eyebrow>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 6 }}>
+          {consistency.map((m) => (
+            <div key={m.label} style={{
+              textAlign: "center", background: C.card2, borderRadius: 8, padding: "8px 2px",
+              border: `1px solid ${m.n >= m.target ? C.green : C.border}`,
+            }}>
+              <div style={{
+                fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 19,
+                color: m.n >= m.target ? C.green : C.text, fontVariantNumeric: "tabular-nums",
+              }}>{m.n}/{m.target}</div>
+              <div style={{ fontSize: 11, color: C.muted }}>{m.label}</div>
+            </div>
+          ))}
+        </div>
+      </Card>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
         <Card>
           <Eyebrow>Weight</Eyebrow>
@@ -314,47 +342,70 @@ function DashTab({ data }) {
         <Card>
           <Eyebrow>Waist</Eyebrow>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-            <Big>{latestWaist?.waist ?? "—"}</Big>
-            <Delta value={waistDelta} goodWhenDown unit='"' />
+            <Big>{latestWaist ? `${latestWaist.waist}"` : "—"}</Big>
+            <Delta value={waistDelta} goodWhenDown unit={'"'} />
           </div>
+          {waists.length >= 2 && <div style={{ marginTop: 6 }}><Spark series={waists.map((x) => ({ v: x.waist }))} color={C.accent} /></div>}
           <div style={{ color: C.muted, fontSize: 12, marginTop: 4 }}>goal {s.goalWaist}"</div>
         </Card>
       </div>
+
       <Card>
-        <Eyebrow>Lift highlights</Eyebrow>
+        <Eyebrow>Key lifts — top set</Eyebrow>
         {KEY_LIFTS.map((ex) => {
           const st = liftStat(ex);
-          if (!st) return <div key={ex} style={{ color: C.muted, fontSize: 14, padding: "4px 0" }}>{ex}: no data</div>;
           return (
-            <div key={ex} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: `1px solid ${C.border}` }}>
-              <span style={{ fontSize: 15, fontWeight: 600 }}>{ex}</span>
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <Spark series={st.series} color={C.accent} />
-                <span style={{ fontVariantNumeric: "tabular-nums", fontSize: 14 }}>{st.label}</span>
-                <Delta value={st.delta} unit={st.unit} />
+            <div key={ex} style={{
+              display: "flex", alignItems: "center", gap: 10, padding: "10px 0",
+              borderBottom: `1px solid ${C.border}`,
+            }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 15, fontWeight: 600 }}>{ex}</div>
+                <div style={{ color: C.muted, fontSize: 12 }}>
+                  {st ? `${st.sessions} session${st.sessions > 1 ? "s" : ""}` : "no sets logged"}
+                </div>
               </div>
+              {st && (
+                <>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{
+                      fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 20,
+                      fontVariantNumeric: "tabular-nums",
+                    }}>{st.label}</div>
+                    <Delta value={st.delta} goodWhenDown={false} unit={st.unit} />
+                  </div>
+                  {st.series.length >= 2 && <Spark series={st.series} color={C.green} />}
+                </>
+              )}
             </div>
           );
         })}
       </Card>
+
       <Card>
-        <Eyebrow>Food log streak</Eyebrow>
-        <div style={{ display: "flex", gap: 8 }}>
-          {weeks.map((w) => (
-            <div key={w.label} style={{
-              flex: 1, background: C.card2, border: `1px solid ${w.current ? C.accent : C.border}`,
-              borderRadius: 8, padding: "8px 6px", textAlign: "center",
-            }}>
-              <div style={{ fontSize: 11, color: C.muted, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.06em", textTransform: "uppercase" }}>{w.label}</div>
-              <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 22, color: w.logged === w.total ? C.green : C.text }}>{w.logged}/{w.total}</div>
+        <Eyebrow>Weekly calories vs {weekBudget.toLocaleString()} budget</Eyebrow>
+        {weeks.map((w2) => {
+          const ratio = Math.min(w2.total / weekBudget, 1.25);
+          const over = w2.total > weekBudget;
+          return (
+            <div key={w2.label} style={{ padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
+                <span style={{ color: w2.current ? C.text : C.muted, fontWeight: w2.current ? 600 : 400 }}>
+                  {w2.label}{w2.current ? " (current)" : ""}
+                </span>
+                <span style={{ color: w2.total === 0 ? C.muted : over ? C.red : C.text, fontVariantNumeric: "tabular-nums" }}>
+                  {w2.total === 0 ? "no logs" : `${w2.total.toLocaleString()}${w2.logged < 7 && !w2.current ? ` · ${w2.logged}/7 days` : ""}`}
+                </span>
+              </div>
+              <div style={{ height: 6, background: C.bg, borderRadius: 3 }}>
+                <div style={{ height: 6, width: `${(ratio / 1.25) * 100}%`, background: over ? C.red : C.green, borderRadius: 3, opacity: w2.current ? 1 : 0.6 }} />
+              </div>
             </div>
-          ))}
+          );
+        })}
+        <div style={{ color: C.muted, fontSize: 12, marginTop: 8 }}>
+          Partial weeks read low — check the days-logged count before reading the bar as a win.
         </div>
-      </Card>
-      <Card>
-        <Eyebrow>Lift days this week</Eyebrow>
-        <Big color={liftDays.length >= 3 ? C.green : C.text}>{liftDays.length}</Big>
-        <div style={{ color: C.muted, fontSize: 12, marginTop: 4 }}>days with sets logged · target 3</div>
       </Card>
     </div>
   );
@@ -469,17 +520,937 @@ function SportTab({ data, mutate, date }) {
         <Eyebrow>This week</Eyebrow>
         {weekEntries.length === 0 && <div style={{ color: C.muted, fontSize: 14 }}>Nothing logged yet this week.</div>}
         {weekEntries.map((e) => (
-          <div key={e.id} style={{ display: "flex", alignItems: "flex-start", padding: "9px 0", borderBottom: `1px solid ${C.border}` }}>
+          <div key={e.id} style={{ display: "flex", alignItems: "center", padding: "9px 0", borderBottom: `1px solid ${C.border}` }}>
             <div style={{ flex: 1 }}>
               <span style={{ fontSize: 15, fontWeight: 600 }}>{e.activity}</span>
               <span style={{ color: C.muted, fontSize: 13, marginLeft: 8 }}>{describe(e)}</span>
               {e.notes && <div style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>{e.notes}</div>}
             </div>
-            <div style={{ color: C.muted, fontSize: 13, marginRight: 10, flexShrink: 0 }}>{fmtDate(e.date)}</div>
-            {e.date === t && <X size={15} color={C.muted} style={{ cursor: "pointer", flexShrink: 0 }} onClick={() => removeEntry(e.id)} />}
+            <div style={{ color: C.muted, fontSize: 13, marginRight: 10 }}>{fmtDate(e.date)}</div>
+            {e.date === t && <X size={15} color={C.muted} style={{ cursor: "pointer" }} onClick={() => removeEntry(e.id)} />}
           </div>
         ))}
       </Card>
+    </div>
+  );
+}
+
+/* ---------- interval timers ---------- */
+const GOLF_CORE = [
+  "Dead bug", "Glute bridge march", "Side plank — R", "Side plank — L",
+  "Bird dog", "Thread the needle", "Chop low-to-high — R", "Chop low-to-high — L",
+  "Plank shoulder taps", "Standing wood chops",
+];
+const CORE_SEQ = GOLF_CORE.flatMap((name, i) =>
+  i < GOLF_CORE.length - 1
+    ? [{ name, secs: 50, kind: "work" }, { name: "Rest", secs: 10, kind: "rest", next: GOLF_CORE[i + 1] }]
+    : [{ name, secs: 50, kind: "work" }]
+);
+
+const GOLF_STRETCH = [
+  ["Cat-cow", 60], ["Open book — R", 60], ["Open book — L", 60],
+  ["Hip flexor — R", 60], ["Hip flexor — L", 60],
+  ["Figure-4 glute — R", 60], ["Figure-4 glute — L", 60],
+  ["Hamstring — R", 60], ["Hamstring — L", 60],
+  ["Adductor rock-back", 60],
+  ["Child's pose reach — R", 60], ["Child's pose reach — L", 60],
+  ["Chest opener", 60], ["Wrist + forearm", 60],
+  ["Upper trap — R", 30], ["Upper trap — L", 30],
+];
+const STRETCH_SEQ = GOLF_STRETCH.map(([name, secs]) => ({ name, secs, kind: "work" }));
+
+function IntervalTimer({ audioCtx, title, sequence, workLabel = "Work", doneNote, onFinish, onClose }) {
+  const [idx, setIdx] = useState(0);
+  const [remaining, setRemaining] = useState(sequence[0].secs);
+  const [paused, setPaused] = useState(false);
+  const [done, setDone] = useState(false);
+  const endRef = useRef(Date.now() + sequence[0].secs * 1000);
+  const pausedRemRef = useRef(null);
+  const lastBeepRef = useRef("");
+
+  const beep = (freq, dur = 0.12, when = 0) => {
+    try {
+      if (!audioCtx) return;
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.frequency.value = freq;
+      o.connect(g); g.connect(audioCtx.destination);
+      const t0 = audioCtx.currentTime + when;
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.25, t0 + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      o.start(t0); o.stop(t0 + dur + 0.05);
+    } catch { /* sound is best-effort */ }
+  };
+
+  useEffect(() => { beep(880); beep(880, 0.12, 0.18); }, []);
+
+  useEffect(() => {
+    if (paused || done) return;
+    const id = setInterval(() => {
+      const rem = Math.max(0, Math.ceil((endRef.current - Date.now()) / 1000));
+      setRemaining(rem);
+      const key = `${idx}-${rem}`;
+      if (rem <= 3 && rem >= 1 && lastBeepRef.current !== key) {
+        lastBeepRef.current = key;
+        beep(620, 0.07);
+      }
+      if (rem === 0) {
+        if (idx === sequence.length - 1) {
+          setDone(true);
+          beep(740); beep(880, 0.12, 0.2); beep(1100, 0.3, 0.4);
+          onFinish();
+        } else {
+          const n = idx + 1;
+          setIdx(n);
+          endRef.current = Date.now() + sequence[n].secs * 1000;
+          setRemaining(sequence[n].secs);
+          if (sequence[n].kind === "rest") beep(520, 0.2);
+          else { beep(880); beep(880, 0.12, 0.18); }
+        }
+      }
+    }, 200);
+    return () => clearInterval(id);
+  }, [paused, idx, done]);
+
+  const togglePause = () => {
+    if (!paused) {
+      pausedRemRef.current = Math.max(0, endRef.current - Date.now());
+      setPaused(true);
+    } else {
+      endRef.current = Date.now() + (pausedRemRef.current ?? 0);
+      setPaused(false);
+    }
+  };
+
+  const cur = sequence[idx];
+  const work = cur.kind !== "rest";
+  const accent = work ? C.accent : C.green;
+  const nextWork = sequence.slice(idx + 1).find((s) => s.kind !== "rest");
+  const roundNum = Math.max(1, sequence.slice(0, idx + 1).filter((s) => s.kind !== "rest").length);
+  const workPositions = sequence.map((s, i) => i).filter((i) => sequence[i].kind !== "rest");
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: C.bg, zIndex: 50,
+      display: "flex", flexDirection: "column", padding: "24px 20px",
+      fontFamily: "'Archivo', sans-serif", color: C.text,
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 600, fontSize: 15, letterSpacing: "0.1em", textTransform: "uppercase", color: C.muted }}>
+          {title} · {roundNum}/{workPositions.length}
+        </div>
+        <X size={22} color={C.muted} style={{ cursor: "pointer" }} onClick={onClose} />
+      </div>
+
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
+        {done ? (
+          <>
+            <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 44, color: C.green }}>DONE</div>
+            <div style={{ color: C.muted, fontSize: 15, textAlign: "center" }}>{doneNote}</div>
+            <div style={{ marginTop: 16 }}><Btn onClick={onClose}>Close</Btn></div>
+          </>
+        ) : (
+          <>
+            <div style={{
+              fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 600, fontSize: 17,
+              letterSpacing: "0.16em", textTransform: "uppercase", color: accent,
+            }}>{paused ? "Paused" : work ? workLabel : "Rest"}</div>
+            <div style={{
+              fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 110,
+              lineHeight: 1, fontVariantNumeric: "tabular-nums", color: paused ? C.muted : C.text,
+            }}>{remaining}</div>
+            <div style={{ fontSize: 22, fontWeight: 600, textAlign: "center", marginTop: 6 }}>
+              {work ? cur.name : `Next: ${cur.next}`}
+            </div>
+            {work && nextWork && (
+              <div style={{ color: C.muted, fontSize: 14 }}>then: {nextWork.name}</div>
+            )}
+          </>
+        )}
+      </div>
+
+      {!done && (
+        <>
+          <div style={{ display: "flex", gap: 4, justifyContent: "center", marginBottom: 18 }}>
+            {workPositions.map((pos) => (
+              <div key={pos} style={{
+                flex: 1, maxWidth: 22, height: 5, borderRadius: 3,
+                background: pos < idx ? C.green : pos === idx ? accent : C.border,
+              }} />
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 10, justifyContent: "center", paddingBottom: 8 }}>
+            <Btn onClick={togglePause}>{paused ? "Resume" : "Pause"}</Btn>
+            <Btn kind="ghost" onClick={onClose}>End</Btn>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function TodayTab({ data, mutate, date }) {
+  const t = date;
+  const [activeTimer, setActiveTimer] = useState(null);
+  const [audioCtx, setAudioCtx] = useState(null);
+
+  const startTimer = (kind) => {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      const ctx = new Ctx();
+      ctx.resume();
+      setAudioCtx(ctx);
+    } catch { setAudioCtx(null); }
+    setActiveTimer(kind);
+  };
+  const finishCheck = (id) =>
+    mutate((d) => {
+      const day = { ...(d.checklist[t] || {}) };
+      day[id] = true;
+      d.checklist = { ...d.checklist, [t]: day };
+    });
+  const checks = data.checklist[t] || {};
+  const ratings = (data.dailyRatings || {})[t] || {};
+  const setRating = (key, val) =>
+    mutate((d) => {
+      d.dailyRatings = { ...(d.dailyRatings || {}), [t]: { ...((d.dailyRatings || {})[t] || {}), [key]: val } };
+    });
+  const log = data.foodLog[t] || [];
+  const cal = log.reduce((s, e) => s + (e.cal || 0), 0);
+  const pro = log.reduce((s, e) => s + (e.protein || 0), 0);
+  const latest = [...data.weighIns].sort((a, b) => a.date.localeCompare(b.date)).slice(-1)[0];
+  const week = currentWeekDates();
+  const weekCount = (id) => week.filter((d) => d <= todayKey() && data.checklist[d]?.[id]).length;
+  const toggle = (id) =>
+    mutate((d) => {
+      const day = { ...(d.checklist[t] || {}) };
+      day[id] = !day[id];
+      d.checklist = { ...d.checklist, [t]: day };
+    });
+  const s = data.settings;
+  const dayTarget = targetFor(t, s);
+  const remaining = dayTarget - cal;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <Card>
+        <Eyebrow>Goal · {s.goalWeight} lbs by {fmtDate(s.goalDate)}/{s.goalDate.slice(0, 4)}</Eyebrow>
+        <BarbellMeter start={s.startWeight} current={latest?.weight ?? s.startWeight} goal={s.goalWeight} />
+      </Card>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+        <Card>
+          <Eyebrow>Cals left</Eyebrow>
+          <Big color={remaining < 0 ? C.red : C.text}>{remaining}</Big>
+          <div style={{ color: C.muted, fontSize: 12, marginTop: 4 }}>{cal} / {dayTarget}{dayTypeLabel(t)}</div>
+        </Card>
+        <Card>
+          <Eyebrow>Protein</Eyebrow>
+          <Big color={pro >= s.proteinTarget ? C.green : C.text}>{pro}g</Big>
+          <div style={{ color: C.muted, fontSize: 12, marginTop: 4 }}>target {s.proteinTarget}g</div>
+        </Card>
+        <Card>
+          <Eyebrow>Weight</Eyebrow>
+          <Big>{latest?.weight ?? "—"}</Big>
+          <div style={{ color: C.muted, fontSize: 12, marginTop: 4 }}>{latest ? fmtDate(latest.date) : "log one"}</div>
+        </Card>
+      </div>
+      <Card>
+        <Eyebrow>Guided routines</Eyebrow>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 600 }}>Golf core · 10 min</div>
+            <div style={{ color: C.muted, fontSize: 12 }}>10 rounds · 50s on / 10s off · 2x/wk · checks Core</div>
+          </div>
+          <Btn small onClick={() => startTimer("core")}>Start</Btn>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 600 }}>Abs · tiffxdan</div>
+            <div style={{ color: C.muted, fontSize: 12 }}>run independently · 2x/wk · tap to check off</div>
+          </div>
+          <Btn small kind="ghost" onClick={() => finishCheck("abs")}>✓ Done</Btn>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "8px 0 2px" }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 600 }}>Golf stretch · 15 min</div>
+            <div style={{ color: C.muted, fontSize: 12 }}>16 holds · continuous flow · checks stretch</div>
+          </div>
+          <Btn small onClick={() => startTimer("stretch")}>Start</Btn>
+        </div>
+      </Card>
+      <Card>
+        <Eyebrow>Daily maintenance</Eyebrow>
+        {CHECK_ITEMS.map((it) => {
+          const on = !!checks[it.id];
+          return (
+            <div key={it.id} onClick={() => toggle(it.id)} style={{
+              display: "flex", alignItems: "center", gap: 12, padding: "11px 4px",
+              borderBottom: `1px solid ${C.border}`, cursor: "pointer",
+            }}>
+              <div style={{
+                width: 24, height: 24, borderRadius: 6, flexShrink: 0,
+                border: `2px solid ${on ? C.green : C.border}`,
+                background: on ? C.green : "transparent",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>{on && <Check size={16} color="#14171C" strokeWidth={3} />}</div>
+              <div style={{ flex: 1, fontSize: 15, color: on ? C.muted : C.text }}>{it.label}</div>
+              <div style={{
+                fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 600,
+                color: weekCount(it.id) >= it.target ? C.green : C.muted, fontSize: 15,
+              }}>{weekCount(it.id)}/{it.target} this wk</div>
+            </div>
+          );
+        })}
+      </Card>
+      <Card>
+        <Eyebrow>Daily check-in</Eyebrow>
+        <RatingPicker label="Energy" value={ratings.energy ?? null} onChange={(v) => setRating("energy", v)} />
+        <RatingPicker label="Sleep" value={ratings.sleep ?? null} onChange={(v) => setRating("sleep", v)} />
+        <RatingPicker label="Feel" value={ratings.feel ?? null} onChange={(v) => setRating("feel", v)} />
+        <div style={{ color: C.muted, fontSize: 12, marginTop: 4 }}>Tap to rate 1–10 · tap again to clear · used for LLM trend analysis</div>
+      </Card>
+      {activeTimer === "core" && (
+        <IntervalTimer audioCtx={audioCtx} title="Golf core" sequence={CORE_SEQ}
+          doneNote="10 minutes banked. Golf core checked off for today."
+          onFinish={() => finishCheck("core")} onClose={() => setActiveTimer(null)} />
+      )}
+      {activeTimer === "stretch" && (
+        <IntervalTimer audioCtx={audioCtx} title="Golf stretch" sequence={STRETCH_SEQ} workLabel="Hold"
+          doneNote="15 minutes banked. Stretch checked off for today."
+          onFinish={() => finishCheck("stretch")} onClose={() => setActiveTimer(null)} />
+      )}
+    </div>
+  );
+}
+
+function FoodTab({ data, mutate, date }) {
+  const t = date;
+  const log = data.foodLog[t] || [];
+  const cal = log.reduce((s, e) => s + (e.cal || 0), 0);
+  const pro = log.reduce((s, e) => s + (e.protein || 0), 0);
+  const [form, setForm] = useState({ name: "", cal: "", protein: "", save: true });
+  const s = data.settings;
+  const dayTarget = targetFor(t, s);
+  const week = currentWeekDates();
+  const dayTotals = week.map((d) => ({
+    date: d,
+    cal: (data.foodLog[d] || []).reduce((s2, e) => s2 + (e.cal || 0), 0),
+    target: targetFor(d, s),
+    future: d > todayKey(),
+    today: d === t,
+  }));
+  const weekBudget = dayTotals.reduce((s2, x) => s2 + x.target, 0);
+  const weekConsumed = dayTotals.reduce((s2, x) => s2 + x.cal, 0);
+
+  const addEntry = (entry) =>
+    mutate((d) => { d.foodLog = { ...d.foodLog, [t]: [...(d.foodLog[t] || []), entry] }; });
+
+  const addCustom = () => {
+    if (!form.name || !form.cal) return;
+    const entry = { id: Date.now(), name: form.name, cal: Number(form.cal), protein: Number(form.protein) || 0 };
+    mutate((d) => {
+      d.foodLog = { ...d.foodLog, [t]: [...(d.foodLog[t] || []), entry] };
+      if (form.save) d.meals = [...d.meals, { ...entry, id: "m" + Date.now() }];
+    });
+    setForm({ name: "", cal: "", protein: "", save: true });
+  };
+
+  const repeatYesterday = () => {
+    const y = new Date(t + "T12:00:00"); y.setDate(y.getDate() - 1);
+    const yk = y.toLocaleDateString("en-CA");
+    const prev = data.foodLog[yk] || [];
+    if (!prev.length) return;
+    mutate((d) => {
+      d.foodLog = { ...d.foodLog, [t]: [...(d.foodLog[t] || []), ...prev.map((e) => ({ ...e, id: Date.now() + Math.random() }))] };
+    });
+  };
+
+  const removeEntry = (id) =>
+    mutate((d) => { d.foodLog = { ...d.foodLog, [t]: (d.foodLog[t] || []).filter((e) => e.id !== id) }; });
+
+  const removeMeal = (id) => mutate((d) => { d.meals = d.meals.filter((m) => m.id !== id); });
+
+  const pct = Math.min((cal / dayTarget) * 100, 100);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <Card>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+          <Eyebrow>Today{isWeekendDay(t) ? " · weekend target" : isFriday(t) ? " · friday target" : ""}</Eyebrow>
+          <div style={{ fontSize: 13, color: C.muted }}>{pro}g protein</div>
+        </div>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+          <Big color={cal > dayTarget ? C.red : C.text}>{cal}</Big>
+          <span style={{ color: C.muted }}>/ {dayTarget} cal</span>
+        </div>
+        <div style={{ height: 8, background: C.bg, borderRadius: 4, marginTop: 10 }}>
+          <div style={{ height: 8, width: `${pct}%`, background: cal > dayTarget ? C.red : C.accent, borderRadius: 4 }} />
+        </div>
+        <div style={{ marginTop: 12 }}>
+          <Btn kind="ghost" small onClick={repeatYesterday}><RotateCcw size={14} /> Copy previous day</Btn>
+        </div>
+      </Card>
+
+      <Card>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+          <Eyebrow>This week · Mon–Sun</Eyebrow>
+          <div style={{ fontSize: 13, color: C.muted, fontVariantNumeric: "tabular-nums" }}>
+            {weekConsumed.toLocaleString()} / {weekBudget.toLocaleString()}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 6, alignItems: "flex-end", height: 64, marginTop: 6 }}>
+          {dayTotals.map((d) => {
+            const ratio = d.target ? Math.min(d.cal / d.target, 1.3) : 0;
+            const h = Math.max(ratio * 48, d.cal > 0 ? 4 : 0);
+            const over = d.cal > d.target;
+            const wd = "MTWTFSS"[(new Date(d.date + "T12:00:00").getDay() + 6) % 7];
+            return (
+              <div key={d.date} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+                <div style={{ width: "100%", height: 48, background: C.bg, borderRadius: 4, display: "flex", alignItems: "flex-end", overflow: "hidden", border: d.today ? `1px solid ${C.accent}` : `1px solid transparent` }}>
+                  <div style={{ width: "100%", height: h, background: d.future ? C.border : over ? C.red : C.green, opacity: d.future ? 0.4 : 1 }} />
+                </div>
+                <span style={{ fontSize: 11, color: d.today ? C.accent : C.muted, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 600 }}>{wd}</span>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ fontSize: 12, color: C.muted, marginTop: 8 }}>
+          {weekBudget - weekConsumed >= 0
+            ? `${(weekBudget - weekConsumed).toLocaleString()} left in the weekly budget`
+            : `${(weekConsumed - weekBudget).toLocaleString()} over budget — trim weekdays, don't crash-cut`}
+        </div>
+      </Card>
+
+      {log.length > 0 && (
+        <Card>
+          <Eyebrow>Logged</Eyebrow>
+          {log.map((e) => (
+            <div key={e.id} style={{ display: "flex", alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
+              <div style={{ flex: 1, fontSize: 15 }}>{e.name}</div>
+              <div style={{ color: C.muted, fontSize: 14, marginRight: 10, fontVariantNumeric: "tabular-nums" }}>
+                {e.cal} cal · {e.protein}g
+              </div>
+              <X size={16} color={C.muted} style={{ cursor: "pointer" }} onClick={() => removeEntry(e.id)} />
+            </div>
+          ))}
+        </Card>
+      )}
+
+      <Card>
+        <Eyebrow>Meal bank — tap to add</Eyebrow>
+        {data.meals.length === 0 && (
+          <div style={{ color: C.muted, fontSize: 14 }}>
+            Empty. Log a meal below with "save to bank" on — since you eat the same meals daily, one setup week makes logging a 5-second job.
+          </div>
+        )}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {data.meals.map((m) => (
+            <div key={m.id} style={{
+              display: "flex", alignItems: "center", gap: 6, background: C.card2,
+              border: `1px solid ${C.border}`, borderRadius: 20, padding: "7px 12px", fontSize: 14, cursor: "pointer",
+            }}>
+              <span onClick={() => addEntry({ ...m, id: Date.now() })}>
+                {m.name} <span style={{ color: C.muted }}>{m.cal}</span>
+              </span>
+              <X size={13} color={C.muted} onClick={() => removeMeal(m.id)} />
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      <Card>
+        <Eyebrow>Add meal</Eyebrow>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <Input placeholder="Name (e.g., Breakfast — eggs + oatmeal)" value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <Input placeholder="Calories" type="number" inputMode="numeric" value={form.cal}
+              onChange={(e) => setForm({ ...form, cal: e.target.value })} />
+            <Input placeholder="Protein (g)" type="number" inputMode="numeric" value={form.protein}
+              onChange={(e) => setForm({ ...form, protein: e.target.value })} />
+          </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: C.muted }}>
+            <input type="checkbox" checked={form.save} onChange={(e) => setForm({ ...form, save: e.target.checked })} />
+            Save to meal bank
+          </label>
+          <Btn onClick={addCustom}><Plus size={15} /> Log it</Btn>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function TrainTab({ data, mutate, date }) {
+  const [tpl, setTpl] = useState("Upper");
+  const [inputs, setInputs] = useState({});
+  const [chartEx, setChartEx] = useState(null);
+  const [extra, setExtra] = useState("");
+  const t = date;
+
+  const lastSession = (ex) => {
+    const prior = (data.lifts[ex] || []).filter((s) => s.date < t);
+    if (!prior.length) return null;
+    const ld = prior.reduce((m, s) => (s.date > m ? s.date : m), prior[0].date);
+    return { date: ld, sets: prior.filter((s) => s.date === ld) };
+  };
+  const logSet = (ex) => {
+    const v = inputs[ex] || {};
+    if (!v.reps) return;
+    mutate((d) => {
+      const h = [...(d.lifts[ex] || [])];
+      h.push({ date: t, weight: Number(v.weight) || 0, reps: Number(v.reps) });
+      h.sort((a, b) => a.date.localeCompare(b.date));
+      d.lifts = { ...d.lifts, [ex]: h };
+    });
+  };
+  const removeSet = (ex, idx) =>
+    mutate((d) => {
+      d.lifts = { ...d.lifts, [ex]: (d.lifts[ex] || []).filter((_, i) => i !== idx) };
+    });
+
+  const allEx = Object.keys(data.lifts).filter((k) => (data.lifts[k] || []).length > 0);
+  const chartData = useMemo(() => {
+    if (!chartEx) return [];
+    const h = data.lifts[chartEx] || [];
+    const byDate = {};
+    h.forEach((s) => {
+      const cur = byDate[s.date];
+      if (!cur || s.weight > cur.weight || (s.weight === cur.weight && s.reps > cur.reps)) byDate[s.date] = s;
+    });
+    return Object.keys(byDate).sort().map((d) => ({
+      date: fmtDate(d), weight: byDate[d].weight, reps: byDate[d].reps,
+      sets: h.filter((x) => x.date === d).length,
+    }));
+  }, [chartEx, data.lifts]);
+
+  const exList = [...TEMPLATES[tpl]];
+  const set = (ex, field, val) => setInputs({ ...inputs, [ex]: { ...(inputs[ex] || {}), [field]: val } });
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        {Object.keys(TEMPLATES).map((k) => (
+          <div key={k} onClick={() => setTpl(k)} style={{
+            padding: "7px 12px", borderRadius: 20, fontSize: 13, cursor: "pointer",
+            fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 600, letterSpacing: "0.04em",
+            textTransform: "uppercase",
+            background: tpl === k ? C.accent : C.card,
+            color: tpl === k ? "#14171C" : C.muted,
+            border: `1px solid ${tpl === k ? C.accent : C.border}`,
+          }}>{k}</div>
+        ))}
+      </div>
+
+      <Card>
+        <Eyebrow>{tpl} — log sets</Eyebrow>
+        {exList.map((ex) => {
+          const last = lastSession(ex);
+          const v = inputs[ex] || {};
+          const todays = (data.lifts[ex] || []).map((s2, i) => ({ ...s2, _i: i })).filter((s2) => s2.date === t);
+          return (
+            <div key={ex} style={{ padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 6 }}>
+                <span style={{ fontSize: 15, fontWeight: 600, flexShrink: 0 }}>{ex}</span>
+                <span style={{ color: C.muted, fontSize: 12, textAlign: "right" }}>
+                  {last
+                    ? `${fmtDate(last.date)}: ${last.sets.map((s2) => (s2.weight ? `${s2.weight}×${s2.reps}` : `${s2.reps}r`)).join(" · ")}`
+                    : "no history"}
+                </span>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8 }}>
+                <Input placeholder="lbs" type="number" inputMode="numeric" value={v.weight || ""}
+                  onChange={(e) => set(ex, "weight", e.target.value)} />
+                <Input placeholder="reps" type="number" inputMode="numeric" value={v.reps || ""}
+                  onChange={(e) => set(ex, "reps", e.target.value)} />
+                <Btn small onClick={() => logSet(ex)} disabled={!v.reps}>Log set</Btn>
+              </div>
+              {todays.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                  {todays.map((s2, n) => (
+                    <div key={s2._i} style={{
+                      display: "flex", alignItems: "center", gap: 6, background: C.card2,
+                      border: `1px solid ${C.border}`, borderRadius: 16, padding: "4px 10px", fontSize: 13,
+                    }}>
+                      <span style={{ color: C.muted, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 600 }}>S{n + 1}</span>
+                      <span>{s2.weight ? `${s2.weight}×${s2.reps}` : `${s2.reps} reps`}</span>
+                      <X size={13} color={C.muted} style={{ cursor: "pointer" }} onClick={() => removeSet(ex, s2._i)} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, marginTop: 10 }}>
+          <Input placeholder="Ad-hoc exercise name" value={extra} onChange={(e) => setExtra(e.target.value)} />
+          <Btn small kind="ghost" disabled={!extra} onClick={() => {
+            if (!extra) return;
+            TEMPLATES[tpl].push(extra);
+            setExtra("");
+          }}><Plus size={14} /> Add</Btn>
+        </div>
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontSize: 12, color: C.muted, marginBottom: 6 }}>Session notes (optional)</div>
+          <Textarea
+            placeholder="How did the session feel? Any PRs, soreness, technique notes..."
+            value={(data.liftNotes || {})[t] || ""}
+            onChange={(e) => mutate((d) => { d.liftNotes = { ...(d.liftNotes || {}), [t]: e.target.value }; })}
+          />
+        </div>
+      </Card>
+
+      {allEx.length > 0 && (
+        <Card>
+          <Eyebrow>Progression</Eyebrow>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+            {allEx.map((ex) => (
+              <div key={ex} onClick={() => setChartEx(ex)} style={{
+                padding: "5px 10px", borderRadius: 16, fontSize: 13, cursor: "pointer",
+                background: chartEx === ex ? C.card2 : "transparent",
+                border: `1px solid ${chartEx === ex ? C.accent : C.border}`,
+                color: chartEx === ex ? C.text : C.muted,
+              }}>{ex}</div>
+            ))}
+          </div>
+          {chartEx && chartData.length > 0 && (
+            <ResponsiveContainer width="100%" height={180}>
+              <LineChart data={chartData} margin={{ top: 5, right: 8, left: -22, bottom: 0 }}>
+                <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
+                <XAxis dataKey="date" stroke={C.muted} fontSize={11} />
+                <YAxis stroke={C.muted} fontSize={11} domain={["auto", "auto"]} />
+                <Tooltip contentStyle={{ background: C.card2, border: `1px solid ${C.border}`, borderRadius: 8 }}
+                  labelStyle={{ color: C.muted }} formatter={(val, name, p) => [`${val} lb × ${p.payload.reps} · ${p.payload.sets} sets`, "top set"]} />
+                <Line type="monotone" dataKey="weight" stroke={C.accent} strokeWidth={2} dot={{ r: 3, fill: C.accent }} />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
+          {chartEx && chartData.length === 0 && <div style={{ color: C.muted, fontSize: 14 }}>No sets logged yet.</div>}
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function BodyTab({ data, mutate, date }) {
+  const [w, setW] = useState("");
+  const [waist, setWaist] = useState("");
+  const [showSettings, setShowSettings] = useState(false);
+  const [injuryForm, setInjuryForm] = useState({ bodyPart: "", severity: null, notes: "" });
+  const [showInjuryForm, setShowInjuryForm] = useState(false);
+  const s = data.settings;
+  const sorted = useMemo(() => [...data.weighIns].sort((a, b) => a.date.localeCompare(b.date)), [data.weighIns]);
+  const latest = sorted[sorted.length - 1];
+  const latestWaist = [...sorted].reverse().find((x) => x.waist != null);
+
+  const logWeighIn = () => {
+    if (!w) return;
+    mutate((d) => {
+      const entry = { date, weight: Number(w) };
+      if (waist) entry.waist = Number(waist);
+      d.weighIns = [...d.weighIns.filter((x) => x.date !== date), entry];
+    });
+    setW(""); setWaist("");
+  };
+
+  const pace = useMemo(() => {
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 21);
+    const ck = cutoff.toLocaleDateString("en-CA");
+    const recent = sorted.filter((x) => x.date >= ck);
+    if (recent.length < 2) return null;
+    const first = recent[0], last = recent[recent.length - 1];
+    const days = (new Date(last.date) - new Date(first.date)) / 86400000;
+    if (days < 7) return null;
+    return ((last.weight - first.weight) / days) * 7;
+  }, [sorted]);
+
+  const chartData = sorted.map((x) => ({ date: fmtDate(x.date), weight: x.weight }));
+
+  const updateSetting = (key, val) =>
+    mutate((d) => { d.settings = { ...d.settings, [key]: Number(val) || d.settings[key] }; });
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+        <Card><Eyebrow>Start</Eyebrow><Big>{s.startWeight}</Big></Card>
+        <Card><Eyebrow>Current</Eyebrow><Big color={C.accent}>{latest?.weight ?? "—"}</Big></Card>
+        <Card><Eyebrow>Goal</Eyebrow><Big color={C.green}>{s.goalWeight}</Big></Card>
+      </div>
+
+      <Card>
+        <Eyebrow>Weight trend</Eyebrow>
+        {chartData.length >= 2 ? (
+          <ResponsiveContainer width="100%" height={200}>
+            <LineChart data={chartData} margin={{ top: 5, right: 8, left: -22, bottom: 0 }}>
+              <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
+              <XAxis dataKey="date" stroke={C.muted} fontSize={11} />
+              <YAxis stroke={C.muted} fontSize={11} domain={[s.goalWeight - 2, "auto"]} />
+              <Tooltip contentStyle={{ background: C.card2, border: `1px solid ${C.border}`, borderRadius: 8 }}
+                labelStyle={{ color: C.muted }} />
+              <ReferenceLine y={s.goalWeight} stroke={C.green} strokeDasharray="5 4"
+                label={{ value: "goal", fill: C.green, fontSize: 11, position: "insideBottomRight" }} />
+              <Line type="monotone" dataKey="weight" stroke={C.accent} strokeWidth={2} dot={{ r: 3, fill: C.accent }} />
+            </LineChart>
+          </ResponsiveContainer>
+        ) : (
+          <div style={{ color: C.muted, fontSize: 14 }}>Two or more weigh-ins draw the trend. You weigh 3x/week — chart fills in fast.</div>
+        )}
+        <div style={{ display: "flex", gap: 18, marginTop: 8, fontSize: 13, color: C.muted, flexWrap: "wrap" }}>
+          <span>Pace: <b style={{ color: pace == null ? C.muted : pace <= -0.3 && pace >= -1 ? C.green : C.yellow }}>
+            {pace == null ? "needs ~2 wks of data" : `${pace > 0 ? "+" : ""}${pace.toFixed(1)} lb/wk`}</b></span>
+          <span>Waist: <b style={{ color: C.text }}>{latestWaist ? `${latestWaist.waist}"` : "—"}</b> → {s.goalWaist}"</span>
+        </div>
+      </Card>
+
+      <Card>
+        <Eyebrow>Log weigh-in</Eyebrow>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8 }}>
+          <Input placeholder="Weight (lb)" type="number" inputMode="decimal" value={w} onChange={(e) => setW(e.target.value)} />
+          <Input placeholder={'Waist (")'} type="number" inputMode="decimal" value={waist} onChange={(e) => setWaist(e.target.value)} />
+          <Btn onClick={logWeighIn} disabled={!w}>Log</Btn>
+        </div>
+        <div style={{ color: C.muted, fontSize: 12, marginTop: 8 }}>Same conditions each time: morning, post-bathroom, pre-food. Trend beats any single number.</div>
+      </Card>
+
+      <Card>
+        <div onClick={() => setShowSettings(!showSettings)} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+          <Settings size={15} color={C.muted} />
+          <span style={{ color: C.muted, fontSize: 14 }}>Targets</span>
+        </div>
+        {showSettings && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 12 }}>
+            {[["weekdayTarget", "Weekday cals (Mon–Thu)"], ["fridayTarget", "Friday cals"], ["weekendTarget", "Weekend cals (Sat–Sun)"], ["proteinTarget", "Protein (g)"], ["goalWeight", "Goal weight"], ["goalWaist", "Goal waist"]].map(([k, label]) => (
+              <div key={k}>
+                <div style={{ fontSize: 12, color: C.muted, marginBottom: 4 }}>{label}</div>
+                <Input type="number" inputMode="decimal" defaultValue={s[k]} onBlur={(e) => updateSetting(k, e.target.value)} />
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <Eyebrow style={{ marginBottom: 0 }}>Injury / symptom log</Eyebrow>
+          <Btn small kind="ghost" onClick={() => setShowInjuryForm((x) => !x)}>
+            <Plus size={13} /> {showInjuryForm ? "Cancel" : "Add"}
+          </Btn>
+        </div>
+        {showInjuryForm && (
+          <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+            <Input
+              placeholder="Body part (e.g. left knee, lower back, shoulder)"
+              value={injuryForm.bodyPart}
+              onChange={(e) => setInjuryForm((f) => ({ ...f, bodyPart: e.target.value }))}
+            />
+            <div>
+              <div style={{ fontSize: 12, color: C.muted, marginBottom: 6 }}>Severity</div>
+              <RatingPicker
+                label=""
+                value={injuryForm.severity}
+                onChange={(v) => setInjuryForm((f) => ({ ...f, severity: v }))}
+              />
+            </div>
+            <Textarea
+              placeholder="Notes (onset, activity that caused it, what makes it worse/better...)"
+              value={injuryForm.notes}
+              onChange={(e) => setInjuryForm((f) => ({ ...f, notes: e.target.value }))}
+            />
+            <Btn disabled={!injuryForm.bodyPart} onClick={() => {
+              if (!injuryForm.bodyPart) return;
+              mutate((d) => {
+                d.injuries = [...(d.injuries || []), {
+                  id: Date.now(), date, bodyPart: injuryForm.bodyPart,
+                  severity: injuryForm.severity, notes: injuryForm.notes,
+                }];
+              });
+              setInjuryForm({ bodyPart: "", severity: null, notes: "" });
+              setShowInjuryForm(false);
+            }}>Log injury</Btn>
+          </div>
+        )}
+        <div style={{ marginTop: showInjuryForm ? 12 : 8, display: "flex", flexDirection: "column", gap: 0 }}>
+          {(data.injuries || []).length === 0 && !showInjuryForm && (
+            <div style={{ color: C.muted, fontSize: 14 }}>No injuries logged.</div>
+          )}
+          {[...(data.injuries || [])].sort((a, b) => b.date.localeCompare(a.date)).map((inj) => (
+            <div key={inj.id} style={{ padding: "10px 0", borderBottom: `1px solid ${C.border}`, display: "flex", gap: 10 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontWeight: 600, fontSize: 15 }}>{inj.bodyPart}</span>
+                  {inj.severity && (
+                    <span style={{
+                      fontSize: 12, fontWeight: 700, padding: "2px 7px", borderRadius: 10,
+                      background: ratingColor(inj.severity) + "33",
+                      color: ratingColor(inj.severity),
+                    }}>sev {inj.severity}</span>
+                  )}
+                  <span style={{ color: C.muted, fontSize: 12 }}>{fmtDate(inj.date)}</span>
+                </div>
+                {inj.notes && <div style={{ color: C.muted, fontSize: 13, marginTop: 3 }}>{inj.notes}</div>}
+              </div>
+              <X size={15} color={C.muted} style={{ cursor: "pointer", flexShrink: 0, marginTop: 4 }}
+                onClick={() => mutate((d) => { d.injuries = (d.injuries || []).filter((x) => x.id !== inj.id); })} />
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+/* ---------- app ---------- */
+export default function App() {
+  const [data, setData] = useState(null);
+  const [tab, setTab] = useState("today");
+  const [saveState, setSaveState] = useState("idle"); // "idle" | "saving" | "saved" | "error"
+  const [saveError, setSaveError] = useState("");
+  const [activeDate, setActiveDate] = useState(todayKey());
+  const savedTimerRef = useRef(null);
+
+  useEffect(() => {
+    fetch('/api/data')
+      .then((r) => r.json())
+      .then((d) => {
+        if (!d.settings.fridayTarget) d.settings.fridayTarget = 2100;
+        if (!d.settings.weekdayTarget) d.settings.weekdayTarget = 1900;
+        if (!d.sports) d.sports = {};
+        if (!d.dailyRatings) d.dailyRatings = {};
+        if (!d.liftNotes) d.liftNotes = {};
+        if (!d.injuries) d.injuries = [];
+        setData(d);
+      })
+      .catch(() => setData(seed()));
+  }, []);
+
+  const mutate = (fn) => {
+    const next = { ...data };
+    fn(next);
+    setData(next);
+    setSaveState("saving");
+    if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+    fetch('/api/data', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(next),
+    }).then(async (r) => {
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        console.error('Save failed — server response:', r.status, body);
+        throw new Error(body.error || body.detail || `HTTP ${r.status}`);
+      }
+      setSaveState("saved");
+      savedTimerRef.current = setTimeout(() => setSaveState("idle"), 2000);
+    }).catch((err) => {
+      console.error('Save error:', err.message);
+      setSaveError(err.message);
+      setSaveState("error");
+    });
+  };
+
+  if (!data) return (
+    <div style={{ background: C.bg, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: C.muted, fontFamily: "'Archivo', sans-serif" }}>
+      Loading…
+    </div>
+  );
+
+  const TABS = [
+    { id: "dash", label: "Dash", icon: LayoutDashboard, el: <DashTab data={data} /> },
+    { id: "today", label: "Today", icon: ClipboardCheck, el: <TodayTab data={data} mutate={mutate} date={activeDate} /> },
+    { id: "food", label: "Food", icon: Utensils, el: <FoodTab data={data} mutate={mutate} date={activeDate} /> },
+    { id: "train", label: "Train", icon: Dumbbell, el: <TrainTab data={data} mutate={mutate} date={activeDate} /> },
+    { id: "sport", label: "Sport", icon: Trophy, el: <SportTab data={data} mutate={mutate} date={activeDate} /> },
+    { id: "body", label: "Body", icon: TrendingUp, el: <BodyTab data={data} mutate={mutate} date={activeDate} /> },
+  ];
+  const active = TABS.find((x) => x.id === tab);
+
+  const exportData = () => {
+    const a = document.createElement("a");
+    a.href = `/api/export`;
+    a.download = `fitlog-export-${todayKey()}.json`;
+    a.click();
+  };
+
+  const activeLabel = new Date(activeDate + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  const backdating = activeDate !== todayKey();
+
+  return (
+    <div style={{ background: C.bg, minHeight: "100vh", color: C.text, fontFamily: "'Archivo', sans-serif" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Archivo:wght@400;500;600;700&display=swap');
+        input::placeholder { color: #5C6675; }
+        input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
+        * { -webkit-tap-highlight-color: transparent; }
+      `}</style>
+
+      <div style={{ maxWidth: 560, margin: "0 auto", padding: "18px 14px 88px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{
+              fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 26,
+              letterSpacing: "0.02em", textTransform: "uppercase",
+            }}>
+              Fit<span style={{ color: C.accent }}>Log</span>
+            </div>
+            {saveState === "saving" && (
+              <span style={{ fontSize: 12, color: C.muted, fontFamily: "'Archivo', sans-serif" }}>Saving…</span>
+            )}
+            {saveState === "saved" && (
+              <span style={{ fontSize: 12, color: C.green, fontFamily: "'Archivo', sans-serif", fontWeight: 600 }}>✓ Saved</span>
+            )}
+            {saveState === "error" && (
+              <span onClick={() => setSaveState("idle")} style={{ fontSize: 12, color: C.red, fontFamily: "'Archivo', sans-serif", fontWeight: 600, cursor: "pointer" }} title={saveError}>✕ Save failed{saveError ? ` — ${saveError}` : ""}</span>
+            )}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div onClick={exportData} title="Export all data from database" style={{
+              cursor: "pointer", color: C.muted, padding: "6px", borderRadius: 8,
+              border: `1px solid ${C.border}`, display: "flex", alignItems: "center",
+              background: C.card,
+            }}><Download size={16} /></div>
+            <input type="date" value={activeDate} max={todayKey()}
+              onChange={(e) => e.target.value && setActiveDate(e.target.value)}
+              style={{
+                background: C.card, border: `1px solid ${backdating ? C.yellow : C.border}`,
+                color: C.text, borderRadius: 8, padding: "6px 8px", fontSize: 13,
+                fontFamily: "'Archivo', sans-serif", colorScheme: "dark",
+              }} />
+          </div>
+        </div>
+        {backdating && (
+          <div style={{
+            background: "#39331F", border: `1px solid ${C.yellow}`, borderRadius: 8,
+            padding: "8px 12px", fontSize: 13, marginBottom: 12, color: "#EBDCA8",
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+          }}>
+            <span>Logging to <b>{activeLabel}</b></span>
+            <span onClick={() => setActiveDate(todayKey())}
+              style={{ color: C.yellow, fontWeight: 600, cursor: "pointer" }}>Back to today</span>
+          </div>
+        )}
+        {active.el}
+      </div>
+
+      <div style={{
+        position: "fixed", bottom: 0, left: 0, right: 0, background: C.card,
+        borderTop: `1px solid ${C.border}`, display: "flex", justifyContent: "space-around",
+        padding: "8px 0 14px",
+      }}>
+        {TABS.map((x) => {
+          const Icon = x.icon;
+          const on = tab === x.id;
+          return (
+            <div key={x.id} onClick={() => setTab(x.id)} style={{
+              display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
+              cursor: "pointer", color: on ? C.accent : C.muted, minWidth: 50,
+            }}>
+              <Icon size={21} strokeWidth={on ? 2.4 : 1.8} />
+              <span style={{
+                fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 600, fontSize: 12,
+                letterSpacing: "0.08em", textTransform: "uppercase",
+              }}>{x.label}</span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

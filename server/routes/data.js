@@ -57,16 +57,15 @@ router.get('/', async (req, res) => {
 });
 
 router.put('/', async (req, res) => {
+  const sql = 'INSERT INTO public.app_data (id, data) VALUES (1, $1) ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()';
+  const payload = JSON.stringify(req.body);
+  console.log('[PUT /api/data] executing INSERT, payload size:', payload.length, 'bytes');
   try {
-    const data = req.body;
-    await pool.query(
-      'INSERT INTO public.app_data (id, data) VALUES (1, $1) ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()',
-      [JSON.stringify(data)]
-    );
-    console.log('[PUT /api/data] saved ok, size:', JSON.stringify(data).length);
+    const result = await pool.query(sql, [payload]);
+    console.log('[PUT /api/data] success, rowCount:', result.rowCount);
     res.json({ ok: true });
   } catch (err) {
-    console.error('[PUT /api/data] error:', err.message);
+    console.error('[PUT /api/data] FAILED:', err.message, '| code:', err.code);
     res.status(503).json({ error: err.message });
   }
 });

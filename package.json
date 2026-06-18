@@ -6,7 +6,8 @@
     "dev:server": "node server/index.js",
     "dev:client": "npm run dev --prefix client",
     "build": "npm run build --prefix client",
-    "start": "node server/index.js"
+    "start": "node server/index.js",
+    "check-data": "node scripts/check-data.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

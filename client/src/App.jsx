@@ -1172,8 +1172,9 @@ function BodyTab({ data, mutate, date }) {
 export default function App() {
   const [data, setData] = useState(null);
   const [tab, setTab] = useState("today");
-  const [err, setErr] = useState(false);
+  const [saveState, setSaveState] = useState("idle"); // "idle" | "saving" | "saved" | "error"
   const [activeDate, setActiveDate] = useState(todayKey());
+  const savedTimerRef = useRef(null);
 
   useEffect(() => {
     fetch('/api/data')
@@ -1188,16 +1189,20 @@ export default function App() {
   }, []);
 
   const mutate = (fn) => {
-    setData((prev) => {
-      const next = { ...prev };
-      fn(next);
-      fetch('/api/data', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(next),
-      }).catch(() => setErr(true));
-      return next;
-    });
+    const next = { ...data };
+    fn(next);
+    setData(next);
+    setSaveState("saving");
+    if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+    fetch('/api/data', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(next),
+    }).then((r) => {
+      if (!r.ok) throw new Error('save failed');
+      setSaveState("saved");
+      savedTimerRef.current = setTimeout(() => setSaveState("idle"), 2000);
+    }).catch(() => setSaveState("error"));
   };
 
   if (!data) return (
@@ -1217,18 +1222,10 @@ export default function App() {
   const active = TABS.find((x) => x.id === tab);
 
   const exportData = () => {
-    const payload = {
-      exportedAt: new Date().toISOString(),
-      appVersion: "fitlog-v1",
-      ...data,
-    };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url;
+    a.href = `/api/export`;
     a.download = `fitlog-export-${todayKey()}.json`;
     a.click();
-    URL.revokeObjectURL(url);
   };
 
   const activeLabel = new Date(activeDate + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
@@ -1245,14 +1242,25 @@ export default function App() {
 
       <div style={{ maxWidth: 560, margin: "0 auto", padding: "18px 14px 88px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-          <div style={{
-            fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 26,
-            letterSpacing: "0.02em", textTransform: "uppercase",
-          }}>
-            Fit<span style={{ color: C.accent }}>Log</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{
+              fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 26,
+              letterSpacing: "0.02em", textTransform: "uppercase",
+            }}>
+              Fit<span style={{ color: C.accent }}>Log</span>
+            </div>
+            {saveState === "saving" && (
+              <span style={{ fontSize: 12, color: C.muted, fontFamily: "'Archivo', sans-serif" }}>Saving…</span>
+            )}
+            {saveState === "saved" && (
+              <span style={{ fontSize: 12, color: C.green, fontFamily: "'Archivo', sans-serif", fontWeight: 600 }}>✓ Saved</span>
+            )}
+            {saveState === "error" && (
+              <span onClick={() => setSaveState("idle")} style={{ fontSize: 12, color: C.red, fontFamily: "'Archivo', sans-serif", fontWeight: 600, cursor: "pointer" }}>✕ Save failed</span>
+            )}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div onClick={exportData} title="Export all data" style={{
+            <div onClick={exportData} title="Export all data from database" style={{
               cursor: "pointer", color: C.muted, padding: "6px", borderRadius: 8,
               border: `1px solid ${C.border}`, display: "flex", alignItems: "center",
               background: C.card,
@@ -1275,11 +1283,6 @@ export default function App() {
             <span>Logging to <b>{activeLabel}</b></span>
             <span onClick={() => setActiveDate(todayKey())}
               style={{ color: C.yellow, fontWeight: 600, cursor: "pointer" }}>Back to today</span>
-          </div>
-        )}
-        {err && (
-          <div style={{ background: "#3A2326", border: `1px solid ${C.red}`, borderRadius: 8, padding: 10, fontSize: 13, marginBottom: 12, color: "#F0B9B9" }}>
-            Save failed — your last change may not persist. It will retry on the next edit.
           </div>
         )}
         {active.el}

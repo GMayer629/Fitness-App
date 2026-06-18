@@ -30,12 +30,14 @@ app.get('/api/health', async (req, res) => {
 
 app.get('/api/init', async (req, res) => {
   try {
-    await initDb();
-    const tables = await pool.query(`
-      SELECT table_name FROM information_schema.tables
-      WHERE table_schema = 'public' ORDER BY table_name
-    `);
-    res.json({ ok: true, message: 'Database initialized', tables: tables.rows.map(r => r.table_name) });
+    const { results, tablesFound } = await initDb();
+    const failed = results.filter(r => !r.ok);
+    res.json({
+      ok: failed.length === 0,
+      message: failed.length === 0 ? 'Database initialized' : 'Some tables failed — check errors',
+      tablesCreated: results,
+      tablesVerified: tablesFound,
+    });
   } catch (err) {
     console.error('[/api/init] error:', err.message);
     res.status(500).json({ ok: false, error: err.message });

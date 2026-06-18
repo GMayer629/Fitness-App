@@ -9,12 +9,13 @@ app.use(express.json({ limit: '10mb' }));
 
 const ready = initDb().catch(err => {
   console.error('DB init failed:', err.message);
-  // Don't process.exit in serverless — let requests fail with a clear error
+  throw err; // keep promise rejected so middleware returns 503
 });
 
 app.use((req, res, next) => {
-  ready.then(() => next()).catch(() => {
-    res.status(503).json({ error: 'Database unavailable — check POSTGRES_URL environment variable' });
+  if (req.path === '/api/health') return next();
+  ready.then(() => next()).catch((err) => {
+    res.status(503).json({ error: 'Database unavailable — check POSTGRES_URL env var', detail: err.message });
   });
 });
 

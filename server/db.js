@@ -1,13 +1,24 @@
 const { Pool } = require('pg');
 
+const sslConfig = process.env.POSTGRES_URL ? { rejectUnauthorized: false } : false;
+
+// Main pool — uses pooled connection (PgBouncer) for queries
 const pool = new Pool({
   connectionString: process.env.POSTGRES_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  ssl: sslConfig,
   max: 3,
 });
 
 async function initDb() {
-  const client = await pool.connect();
+  // Use non-pooling URL for DDL (CREATE TABLE) — PgBouncer in transaction mode
+  // doesn't support DDL. Falls back to main pool if non-pooling URL not set.
+  const initPool = new Pool({
+    connectionString: process.env.POSTGRES_URL_NON_POOLING || process.env.POSTGRES_URL,
+    ssl: sslConfig,
+    max: 1,
+  });
+
+  const client = await initPool.connect();
   try {
     await client.query(`
       CREATE TABLE IF NOT EXISTS app_data (
@@ -25,6 +36,7 @@ async function initDb() {
     await client.query('INSERT INTO settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING');
   } finally {
     client.release();
+    await initPool.end();
   }
 }
 

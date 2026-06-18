@@ -1173,6 +1173,7 @@ export default function App() {
   const [data, setData] = useState(null);
   const [tab, setTab] = useState("today");
   const [saveState, setSaveState] = useState("idle"); // "idle" | "saving" | "saved" | "error"
+  const [saveError, setSaveError] = useState("");
   const [activeDate, setActiveDate] = useState(todayKey());
   const savedTimerRef = useRef(null);
 
@@ -1198,11 +1199,19 @@ export default function App() {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(next),
-    }).then((r) => {
-      if (!r.ok) throw new Error('save failed');
+    }).then(async (r) => {
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        console.error('Save failed — server response:', r.status, body);
+        throw new Error(body.error || body.detail || `HTTP ${r.status}`);
+      }
       setSaveState("saved");
       savedTimerRef.current = setTimeout(() => setSaveState("idle"), 2000);
-    }).catch(() => setSaveState("error"));
+    }).catch((err) => {
+      console.error('Save error:', err.message);
+      setSaveError(err.message);
+      setSaveState("error");
+    });
   };
 
   if (!data) return (
@@ -1256,7 +1265,7 @@ export default function App() {
               <span style={{ fontSize: 12, color: C.green, fontFamily: "'Archivo', sans-serif", fontWeight: 600 }}>✓ Saved</span>
             )}
             {saveState === "error" && (
-              <span onClick={() => setSaveState("idle")} style={{ fontSize: 12, color: C.red, fontFamily: "'Archivo', sans-serif", fontWeight: 600, cursor: "pointer" }}>✕ Save failed</span>
+              <span onClick={() => setSaveState("idle")} style={{ fontSize: 12, color: C.red, fontFamily: "'Archivo', sans-serif", fontWeight: 600, cursor: "pointer" }} title={saveError}>✕ Save failed{saveError ? ` — ${saveError}` : ""}</span>
             )}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

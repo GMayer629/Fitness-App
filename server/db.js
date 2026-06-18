@@ -24,6 +24,7 @@ const pool = new Pool({
   max: 3,
   connectionTimeoutMillis: 8000,
   idleTimeoutMillis: 30000,
+  options: '-c search_path=public',
 });
 
 pool.on('error', (err) => {
@@ -126,6 +127,7 @@ async function initDb() {
     ssl: sslConfig,
     max: 1,
     connectionTimeoutMillis: 10000,
+    options: '-c search_path=public',
   });
 
   const client = await initPool.connect();

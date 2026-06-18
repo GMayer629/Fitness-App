@@ -8,12 +8,24 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
 const ready = initDb().catch(err => {
-  console.error('DB init failed:', err);
-  process.exit(1);
+  console.error('DB init failed:', err.message);
+  // Don't process.exit in serverless — let requests fail with a clear error
 });
 
 app.use((req, res, next) => {
-  ready.then(() => next()).catch(next);
+  ready.then(() => next()).catch(() => {
+    res.status(503).json({ error: 'Database unavailable — check POSTGRES_URL environment variable' });
+  });
+});
+
+app.get('/api/health', async (req, res) => {
+  try {
+    const { pool } = require('./db');
+    await pool.query('SELECT 1');
+    res.json({ ok: true, db: 'connected' });
+  } catch (err) {
+    res.status(503).json({ ok: false, error: err.message });
+  }
 });
 
 app.use('/api/data', require('./routes/data'));

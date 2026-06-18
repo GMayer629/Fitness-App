@@ -89,3 +89,11 @@ CREATE TABLE IF NOT EXISTS public.injuries (
   severity INTEGER CHECK (severity BETWEEN 1 AND 10),
   notes TEXT
 );
+
+-- Added for LLM chat interface: persisted conversation history
+CREATE TABLE IF NOT EXISTS public.chat_history (
+  id SERIAL PRIMARY KEY,
+  role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+  content TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);

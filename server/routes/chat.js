@@ -2,8 +2,6 @@ const express = require('express');
 const router = express.Router();
 const Anthropic = require('@anthropic-ai/sdk');
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
 function buildSystemPrompt(context) {
   const { settings, recentWeighIns, recentFood, recentLifts, recentSports, injuries } = context;
 
@@ -74,6 +72,8 @@ router.post('/', async (req, res) => {
   if (!process.env.ANTHROPIC_API_KEY) {
     return res.status(503).json({ error: 'ANTHROPIC_API_KEY not configured' });
   }
+
+  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
   try {
     const systemPrompt = buildSystemPrompt(context || {

@@ -10,7 +10,7 @@ function buildSystemPrompt(context) {
     : 'No recent weigh-ins';
 
   const foodStr = recentFood.length
-    ? recentFood.map(f => `${f.date} — ${f.name} (${f.cal ?? f.calories ?? 0} cal, ${f.protein ?? 0}g protein)`).join('\n')
+    ? recentFood.map(f => `${f.date} — ${f.name} (${f.calories ?? 0} cal, ${f.protein ?? 0}g protein)`).join('\n')
     : 'No recent food log entries';
 
   const liftStr = recentLifts.length

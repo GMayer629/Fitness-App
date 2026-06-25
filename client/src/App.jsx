@@ -1325,7 +1325,12 @@ function ChatTab({ data }) {
     const recentFood = [];
     Object.entries(data.foodLog || {}).forEach(([date, entries]) => {
       if (date >= cutoffStr) {
-        (entries || []).forEach(e => recentFood.push({ date, ...e }));
+        (entries || []).forEach(e => recentFood.push({
+          date,
+          name: e.name,
+          calories: e.cal ?? e.calories ?? 0,
+          protein: e.protein ?? 0,
+        }));
       }
     });
     recentFood.sort((a, b) => b.date.localeCompare(a.date));
